@@ -1,3 +1,16 @@
+Code developed for the gender differences in AD costs project and the 2026 paper accepted by BMC Public Health.
+
+Jain SS, Ang TFA, Sunderaraman P, Au R, Chen J. Gender Differences in Informal Caregiving Costs and Burden in Alzheimer Disease: A Multinational Cross-sectional Analysis. Accepted by BMC Public Health.
+
+copyright (c) 2026 Jinying Chen, Boston University Chobanian & Avedisian School of Medicine
+
+Licensed under the MIT License (the "License"); you may not use this file except in compliance with the License.
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+
+
+**************
+
 This repository contains the R Markdown notebooks used for the ADcost analyses.
 
 For open-source release, the notebooks now assume a project-local layout by
