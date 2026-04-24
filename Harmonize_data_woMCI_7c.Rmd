@@ -1,0 +1,1558 @@
+---
+title: "Harmonize data, Merged_woMCI: 7 countries"
+output: html_document
+date: "2025-10-28"
+---
+
+
+#****************************************
+# MIT License
+# Copyright (c) 2026 Jinying Chen
+#  
+# author(s): Jinying Chen, Boston University Chobanian & Avedisian School of Medicine
+# release date: 2026-4-20
+# ver: 1.0
+# 
+# This code was written to support data analysis for the gender differences in AD 
+# costs project and the 2026 paper published in BMC Public Health.
+# The code is for research use only, and is provided as it is.
+# 
+
+```{r}
+#library(Hmisc)
+library(psych)
+library(dplyr)
+library(table1) #Produced table 1 ready for publication
+library(tidyr)
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# The purpose of this R code is to perform primary analysis on the merged datasets from US, Japan, Spain, Italy, UK, FR, GE.
+
+# We start with importing and cleaning the data for each country and then merging the data to perform analysis on the merged dataset.
+
+# Please ensure you have these listed datasets to run this R code optimally.
+
+# geras_US_demoral.csv
+# geras_US_demoralc.csv
+# geras_US_sociop_bl.csv
+# geras_US_zbi_bl.csv
+# geras_US_mmse_bl.csv
+# geras_US_costtot_bl.csv
+
+# geras_JAPAN_adcov.csv
+# geras_JAPAN_adzbi.csv
+# geras_JAPAN_admmse.csv
+# geras_JAPAN_adcost.csv
+
+# geras_II_demorel.csv
+# geras_II_demorelc.csv
+# geras_II_zbiervat.csv
+# geras_II_rud.csv
+# geras_II_edc.csv
+# geras_II_mmse.csv
+# geras_II_costtot.csv
+
+# geras_EU_demorel.csv
+# geras_EU_demorelc.csv
+# geras_EU_zbiervat.csv
+# geras_EU_rud.csv
+# geras_EU_edc.csv
+# geras_EU_mmse.csv
+# geras_EU_costtot.csv
+
+# Study period: 
+# EU: Physicians from the three countries enrolled patients between October 1, 2010 and September 31, 2011.
+# Patients were enrolled by physicians between October 30, 2016 and October 9, 2017 for the GERAS-US study, between November 2016 and December 2017 for the GERAS-JP study, and between April 2013 and January 2014 for the GERAS-II (Spain and Italy) study.
+
+# EU to US dollar exchange rate
+# https://www.macrotrends.net/2548/euro-dollar-exchange-rate-historical-chart
+
+
+# inflation rate (CPI)
+# https://fred.stlouisfed.org/tags/series?t=cpi
+
+# idx year: 2020 
+# inflation factor for USA: 1.0596063
+# inflation factor for JPN: 1.0144817
+# inflation factor for ESP: 1.0303351
+# inflation factor for ITA: 1.0293441
+# inflation factor for FRA: 1.0005241
+# inflation factor for DEU: .99505091
+# inflation factor for GBR: 1.008787
+
+
+# === EU 2 US rate for 2020 ===
+
+#    Variable |        Obs        Mean    Std. Dev.       Min        Max
+#-------------+---------------------------------------------------------
+#       value |      4,425    1.171293    .1069153      .9589     1.4826
+
+# dollar conversion
+```{r}
+# index year 2020
+IF_rate <- c(
+# inflation factor for USA:
+1.0596063,
+# inflation factor for JPN: 
+1.0144817,
+# inflation factor for ESP: 
+1.0303351,
+# inflation factor for ITA: 
+1.0293441,
+# inflation factor for FRA: 
+1.0005241,
+# inflation factor for DEU: 
+.99505091,
+# inflation factor for GBR: 
+1.008787
+)
+
+names(IF_rate) <- c("US", "JP", "SP", "IT", "FR", "DE", "UK")
+
+US_rate <- c(1, 1, 1.14, 1.14, 1.14, 1.14, 1.14)
+
+names(US_rate) <- c("US", "JP", "SP", "IT", "FR", "DE", "UK")
+
+```
+
+```{r}
+source("notebook_setup.R")
+datadir <- project_dir(c("data", "20251029_7c"), envvar = "ADCOST_DATA_DIR", create = TRUE)
+raw_eu_dir <- project_dir(c("data", "raw", "fair-geras-eu-00003-6937-806", "fair-geras-eu-00003-6937-806"), envvar = "ADCOST_GERAS_EU_DIR")
+raw_us_dir <- project_dir(c("data", "raw", "fair-geras-us-00004-4594-665", "fair-geras-us-00004-4594-665"), envvar = "ADCOST_GERAS_US_DIR")
+raw_jp_dir <- project_dir(c("data", "raw", "fair-geras-japan-4581-662", "fair-geras-japan-4581-662"), envvar = "ADCOST_GERAS_JP_DIR")
+raw_ii_dir <- project_dir(c("data", "raw", "fair-geras-ii-4595-664", "fair-geras-ii-4595-664"), envvar = "ADCOST_GERAS_II_DIR")
+```
+
+#### GERAS-EU ####
+# demographics
+```{r demorel import}
+des_eu <- read.csv(paste0(raw_eu_dir, "geras_EU_demorel.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(des_eu)
+```
+
+```{r}
+table(des_eu$DEMOTYPE, useNA = "ifany")
+table(des_eu$VISITID, useNA = "ifany")
+table(des_eu$COUNTRY, useNA = "ifany")
+```
+
+```{r}
+table(des_eu$SEX, useNA = "ifany")
+table(des_eu$SEXLNM, useNA = "ifany")
+table(des_eu$SEX, des_eu$DEMOTYPE, useNA = "ifany")
+table(des_eu$SEX, des_eu$COUNTRY, useNA = "ifany")
+```
+
+
+# Separate dataset for patient demographics (demotype=1)
+```{r filtering demoral}
+despat_eu <- des_eu %>%
+  filter((DEMOTYPE == 1), (VISID == 1)) %>%
+  select(SUBJID, COUNTRYL, TRTSORT, SEX, SEXLNM, ENTAGE, DEMOTYPE)
+
+duplicates <- duplicated(despat_eu$SUBJID)
+duplicate_rows <- despat_eu[duplicates,]
+print(duplicate_rows)
+```
+
+```{r}
+despat_eu2 <- despat_eu %>%
+  filter(!is.na(SEX))
+```
+
+# Separate dataset for caregiver demographics (demotype=6)
+```{r filtering demoral}
+descar_eu <- des_eu %>%
+  filter((DEMOTYPE == 6), (VISID == 1)) %>%
+  select(SUBJID, SEX, SEXLNM, ENTAGE, DEMOTYPE)
+```
+
+
+```{r filtering demoral}
+duplicates <- duplicated(descar_eu$SUBJID) | duplicated(descar_eu$SUBJID, fromLast = TRUE)
+duplicate_rows <- descar_eu[duplicates,]
+print(duplicate_rows)
+table(duplicate_rows$SUBJID)
+pat_w_multi_cargivers <- unique(duplicate_rows$SUBJID)
+```
+
+
+
+## Removing participants with duplicated SUBJID (i.e., multiple caregivers) from descar_eu dataset
+```{r}
+descar_eu2 <- descar_eu %>%
+  group_by(SUBJID) %>%
+  filter(n() == 1) %>%
+  ungroup()
+```
+
+
+```{r filtering demoral}
+descar_eu3 <- descar_eu2 %>%
+  filter(!is.na(SEX))
+```
+
+
+
+```{r remove duplicates}
+duplicates <- duplicated(descar_eu3$SUBJID) | duplicated(descar_eu3$SUBJID, fromLast = TRUE)
+duplicate_rows <- descar_eu3[duplicates,]
+print(duplicate_rows)
+```
+
+## Patient characteristics
+```{r}
+comorbid_eu<-read.csv(paste0(raw_eu_dir, "geras_EU_mhcmbd.csv"))
+```
+
+```{r}
+comorbid_eu2 <- comorbid_eu %>% filter(MHTYPE==1, VISID == 1) #Restrict to patient
+
+comorbid_eu3  <- comorbid_eu2 %>%
+  select(SUBJID, ANYDIAFL) %>%
+  group_by(SUBJID) %>%
+  summarise(cmbdts = sum(ANYDIAFL), .groups = "drop") 
+```
+
+
+## CG demographic variables
+```{r demorelc import}
+desc_eu <- read.csv(paste0(raw_eu_dir, "geras_EU_demorelc.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(desc_eu)
+```
+
+```{r filtering demorelc}
+desc_eu2 <- desc_eu %>%
+  filter(!is.na(DMRELLNM), !is.na(CWTPTLNM), !is.na(TRTSORT), (VISID == 1)) %>%
+  select(SUBJID, DMRELLNM, CWTPTLNM)
+dim(desc_eu2)
+
+duplicates <- duplicated(desc_eu2$SUBJID)
+duplicate_rows <- desc_eu2 [duplicates,]
+print(duplicate_rows)
+```
+
+
+## Removing participants with duplicated SUBJID (i.e., multiple caregivers) from desc_eu dataset
+```{r}
+desc_eu3 <- desc_eu2 %>%
+  group_by(SUBJID) %>%
+  filter(n() == 1) %>%
+  ungroup()
+```
+
+
+# Importing ZBI dataset
+```{r zbi import}
+zbi_eu <- read.csv(paste0(raw_eu_dir, "geras_EU_zbiervat.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(zbi_eu)
+```
+
+```{r filtering zbi}
+zbi_eu2 <- zbi_eu %>%
+  filter( !is.na(TRTSORT), (ZBIQSNUM == "ZBITS"), !is.na(ZBIRN), (VISID == 1)) %>%
+  select(SUBJID, ZBIQSNUM, ZBIRN)
+dim(zbi_eu2)
+
+duplicates <- duplicated(zbi_eu2$SUBJID)
+duplicate_rows <- zbi_eu2 [duplicates,]
+print(duplicate_rows)
+```
+
+# Importing RUD dataset to calculate no. of other caregivers
+```{r rud import}
+rud_eu <- read.csv(paste0(raw_eu_dir, "geras_EU_rud.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(rud_eu)
+```
+
+```{r filtering rud}
+rud_eu2 <- rud_eu %>%
+  filter( !is.na(TRTSORT), (RUDQSNUM == "RUDRES2"), !is.na(RUDRC), (VISID == 1)) %>%
+  select(SUBJID, RUDQSNUM, RUDRC)
+dim(rud_eu2)
+
+duplicates <- duplicated(rud_eu2$SUBJID)
+duplicate_rows <- rud_eu2 [duplicates,]
+print(duplicate_rows)
+
+
+```
+
+
+# Importing EDC dataset to calculate no. years of formal education
+```{r educ import}
+educ_eu <- read.csv(paste0(raw_eu_dir, "geras_EU_edc.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(educ_eu)
+```
+
+```{r filtering rud}
+educ_eu2 <- educ_eu %>%
+  filter( !is.na(TRTSORT), !is.na(EDCRN), (VISID == 1)) %>%
+  select(SUBJID, EDCRN)
+dim(educ_eu2)
+
+duplicates <- duplicated(educ_eu2$SUBJID)
+duplicate_rows <- educ_eu2 [duplicates,]
+print(duplicate_rows)
+```
+
+# Importing MMSE dataset
+```{r}
+mmse_eu <- read.csv(paste0(raw_eu_dir, "geras_EU_mmse.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(mmse_eu)
+```
+
+# Filtering MMSE dataset
+```{r}
+mmse_eu2 <- mmse_eu %>%
+  filter((MMSED=="MMSE Total Score"), !is.na(MMSERN), (VISID == 1), !is.na(TRTSORT)) %>%
+  dplyr::select(SUBJID, MMSERN)  
+dim(mmse_eu2)
+
+
+duplicates <- duplicated(mmse_eu2$SUBJID)
+duplicate_rows <- mmse_eu2 [duplicates,]
+print(duplicate_rows)
+```
+
+
+
+## Cost Variables
+```{r cost variables}
+cost_eu <- read.csv(paste0(raw_eu_dir, "geras_EU_costtot.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+#COSTQSNUM <- c("COSTPADM", "COSTPADNM", "COSTCADM", "COSTCAINM", "COSTTOT")
+dim(cost_eu)
+```
+
+```{r filter cost}
+cost_eu2 <- cost_eu %>% 
+  filter(COSTQSNUM %in% c("COSTPADM", "COSTPADNM", "COSTCADM", "COSTCAINM"), !is.na(COSPR1RN), (VISID == 1), !is.na(TRTSORT)) %>% 
+  select(SUBJID, COSTQSNUM, COSTD, COSPR1RN)
+
+dim(cost_eu2)
+```
+
+```{r wide cost}
+cost_eu_wide <- cost_eu2 %>%
+  select(SUBJID, COSTQSNUM, COSPR1RN) %>%
+  pivot_wider(
+    names_from = COSTQSNUM,
+    values_from = COSPR1RN,
+    names_prefix = "COST_"
+  ) %>%
+  select(SUBJID, COST_COSTCAINM)
+
+dim(cost_eu_wide)
+```
+
+# sample size flowchart
+## check the number of participants excluded when deriving the analytic datasets
+```{r}
+df <- merge(merge(merge(merge(merge(merge(merge(despat_eu2, descar_eu3, by = "SUBJID", all = T), desc_eu3, by = "SUBJID", all = T), zbi_eu2, by = "SUBJID", all = T), rud_eu2, by = "SUBJID", all = T), cost_eu2, by="SUBJID", all = T), educ_eu2, by="SUBJID", all = T), mmse_eu2, by="SUBJID", all = T) |>
+  rename(P_AGE = ENTAGE.x, P_SEX = SEXLNM.x, COUNTRY = COUNTRYL, CG_SEX = SEXLNM.y, CG_AGE = ENTAGE.y, CG_REL = DMRELLNM, CG_LIVEIN = CWTPTLNM, SEVGRPCD = TRTSORT, ZBITOTB = ZBIRN, CG_OTHCG = RUDRC, P_EDUC = EDCRN, MMSETOTB = MMSERN)
+
+table(df$COSTQSNUM, useNA = "always")
+```
+
+```{r}
+df_all_eu <- merge(merge(merge(merge(merge(merge(merge(despat_eu2, descar_eu3, by = "SUBJID", all = T), desc_eu3, by = "SUBJID", all = T), zbi_eu2, by = "SUBJID", all = T), rud_eu2, by = "SUBJID", all = T), cost_eu_wide, by="SUBJID", all = T), educ_eu2, by="SUBJID", all = T), mmse_eu2, by="SUBJID", all = T) |>
+  rename(P_AGE = ENTAGE.x, P_SEX = SEXLNM.x, COUNTRY = COUNTRYL, CG_SEX = SEXLNM.y, CG_AGE = ENTAGE.y, CG_REL = DMRELLNM, CG_LIVEIN = CWTPTLNM, SEVGRPCD = TRTSORT, ZBITOTB = ZBIRN, CG_OTHCG = RUDRC, P_EDUC = EDCRN, MMSETOTB = MMSERN)
+  
+dim(df_all_eu)
+```
+
+```{r}
+df_all_eu %>%
+  filter(P_AGE == ".")
+
+df_all_eu %>%
+  filter(CG_AGE == ".")
+```
+
+```{r}
+df_all_eu2 <-merge(df_all_eu, comorbid_eu3, by = "SUBJID", all.x = T) 
+dim(df_all_eu2)
+```
+
+
+```{r}
+df_all_eu3 <- df_all_eu2 |> 
+  filter(! SUBJID %in% pat_w_multi_cargivers)
+dim(df_all_eu3)
+```
+
+
+```{r}
+df_all_eu4 <- df_all_eu3 |> 
+  filter(! is.na(COUNTRY))
+dim(df_all_eu4)
+```
+
+
+
+```{r}
+df_all_eu4[complete.cases(df_all_eu4), ]
+```
+
+
+```{r}
+colSums(is.na(df_all_eu4))
+```
+
+```{r}
+for (country in c("FRANCE", "UNITED KINGDOM", "GERMANY")) {
+  df_all_c <- df_all_eu4 |>
+  filter(COUNTRY == country)
+  print(country)
+  print(colSums(is.na(df_all_c)))
+}
+
+```
+
+
+## Merged Geras-EU dataset
+```{r merged datasets}
+merged_eu1 <- merge(merge(merge(merge(merge(merge(merge(despat_eu2, descar_eu3, by = "SUBJID"), desc_eu3, by = "SUBJID"), zbi_eu2, by = "SUBJID"), rud_eu2, by = "SUBJID"), cost_eu2, by="SUBJID"), educ_eu2, by="SUBJID"), mmse_eu2, by="SUBJID")
+dim(merged_eu1)
+```
+
+## Cleaning the dataset
+```{r cleaning dataset}
+merged_eu2 <- merged_eu1 %>%
+  rename(P_AGE = ENTAGE.x, P_SEX = SEXLNM.x, COUNTRY = COUNTRYL, CG_SEX = SEXLNM.y, CG_AGE = ENTAGE.y, CG_REL = DMRELLNM, CG_LIVEIN = CWTPTLNM, SEVGRPCD = TRTSORT, ZBITOTB = ZBIRN, CG_OTHCG = RUDRC, P_EDUC = EDCRN, MMSETOTB = MMSERN) %>%
+  filter(! is.na(COUNTRY)) %>%
+  filter(!is.na(P_AGE), !is.na(P_SEX), !is.na(CG_AGE), !is.na(CG_SEX), !is.na(CG_LIVEIN), !is.na(CG_OTHCG), !is.na(CG_REL), !is.na(ZBITOTB), !is.na(SEVGRPCD), P_AGE != ".") %>% 
+   mutate (P_AGE= ifelse(P_AGE == ">89", "90", P_AGE),
+           P_AGE1= as.numeric(P_AGE),
+           CG_AGE= ifelse(CG_AGE == ">89", "90", CG_AGE),
+           CG_AGE2= as.numeric(CG_AGE),
+          P_AGECAT= as.factor(ifelse(P_AGE1 <65, "1", ifelse(P_AGE1 >= 65 & P_AGE1 <= 74, "2",  ifelse(P_AGE1 >= 75 & P_AGE1 <= 84, "3", "4")))),
+          CG_AGECAT= as.factor(ifelse(CG_AGE2 <65, "1", ifelse(CG_AGE2 >= 65 & CG_AGE2 <= 74, "2",  ifelse(CG_AGE2 >= 75 & CG_AGE2 <= 84, "3", "4")))),
+          P_SEX1= as.factor(ifelse(P_SEX == "Male" , "1", "2")), 
+         CG_SEX1= as.factor(ifelse(CG_SEX== "Male" , "1", "2")), 
+         P_EDUC1= as.factor(ifelse(P_EDUC <= 12, "1", "2")),
+         CG_OTHCG1=as.factor(ifelse(CG_OTHCG==0, "0", ifelse(CG_OTHCG == 1, "1", ifelse(CG_OTHCG == 2, "2", ifelse(CG_OTHCG == 3, "3", "4"))))),
+         SEVGRP= as.factor(SEVGRPCD),
+         CG_LIVEIN1= as.factor (ifelse(CG_LIVEIN == "Yes" , "1", "2")),
+         CG_REL1= as.factor(ifelse(CG_REL %in% c("Husband", "Wife"), 1, ifelse(CG_REL == "Child", 2, 3)))) %>%
+dplyr::select(SUBJID, COUNTRY, P_SEX1, P_AGE1, CG_AGE2,CG_SEX1, CG_LIVEIN1, CG_OTHCG1, CG_REL1, ZBITOTB, COSTQSNUM, COSPR1RN, P_AGECAT, CG_AGECAT, P_EDUC1, MMSETOTB)
+dim(merged_eu2)
+```
+
+```{r}
+merged_eu2 %>%
+  filter(COSTQSNUM == "COSTPADNM") 
+```
+
+
+
+# Final merge: Longer format to wider format dataset
+
+#Final dataset (Sample size = 1480, FR: 415, UK: 521, GR: 544)
+```{r merge final}
+merged_eu4 <- merged_eu2 %>% 
+  pivot_wider(
+    names_from = COSTQSNUM,
+    values_from = COSPR1RN,
+    names_prefix = "COST_")
+dim(merged_eu4)
+
+table(merged_eu4$COUNTRY)
+```
+
+# add combordity
+```{r}
+merged_eu4_plus <- merge(merged_eu4, comorbid_eu3, by="SUBJID")
+```
+
+save the cleaned dataset
+```{r}
+save(merged_eu4, file = paste0(datadir,"EU.RData"))
+
+save(merged_eu4_plus, file = paste0(datadir,"EU_plus.RData"))
+```
+
+
+
+#### GERAS-US ####
+
+# Including only the MILD AD severity group
+
+# Importing Patient Demographic dataset
+```{r demorel import}
+des_us <- read.csv(paste0(raw_us_dir, "geras_US_demorel.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(des_us)
+
+```
+
+# Filtering Patient Demographic dataset
+```{r}
+des_us2 <- des_us %>%
+  filter(!is.na(SEX), !is.na(SEXLNM)) %>%
+  dplyr::select(SUBJID, COUNTRY, SEX, SEXLNM, ENTAGE, ETHNIC, ETHNICLNM)
+dim(des_us2)
+```
+
+# Importing Caregiver demographic dataset
+```{r demorelc import}
+desc_us <- read.csv(paste0(raw_us_dir, "geras_US_demorelc.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(desc_us)
+
+```
+# Filtering Caregiver demographic dataset
+# Keeping only the MILD AD severity group
+```{r}
+desc_us2 <- desc_us %>%
+  filter(!is.na(SEX), !is.na(SEXLNM), !is.na(ENTAGE), !is.na(DMREL), !is.na(CARWTPAT), !is.na(NUMCGVR), !is.na(TRTSORT), !is.na(TRT), (TRT == "Mild AD")) %>%
+  dplyr::select(SUBJID, SEX, SEXLNM, ENTAGE, DMREL, DMRELLNM, CARWTPAT, NUMCGVR, TRT, TRTSORT)
+dim(desc_us2)
+```
+
+
+## Patient characteristics
+```{r}
+comorbid_us<- read.csv(paste0(raw_us_dir, "geras_US_ccmbd_bl.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+```
+
+```{r}
+comorbid_us %>% 
+  filter(VISID==1, CCMBDCD == 1) %>%
+  filter(SUBJID == "301-007") 
+```
+
+
+```{r}
+comorbid_us2 <- comorbid_us %>% 
+  filter(VISID==1, CCMBDCD==1) %>%
+  group_by(SUBJID) %>%
+  summarise(cmbdts = sum(CCMBDRN)) %>%
+  select(SUBJID, cmbdts)
+```
+
+
+# Importing Education dataset
+```{r educ import}
+educ_us <- read.csv(paste0(raw_us_dir, "geras_US_sociop_bl.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(educ_us)
+```
+
+#Filtering education dataset
+```{r}
+educ_us2 <- educ_us %>% 
+  filter(!is.na(SOCIOPRN), (SOCIOPC=="Education"), (VISITNME=="Baseline"), (SOCIOPRC!= "Unknown")) %>% 
+  dplyr::select(SUBJID, SOCIOPRC, SOCIOPRN)
+dim(educ_us2)
+```
+
+# Importing ZBI dataset
+```{r zbi import}
+zbi_us <- read.csv(paste0(raw_us_dir, "geras_US_zbi_bl.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(zbi_us)
+```
+
+# Filtering ZBI dataset
+```{r}
+zbi_us2 <- zbi_us %>% 
+  filter(!is.na(ZBIRN), (ZBIM=="Total Score")) %>% 
+  dplyr::select(SUBJID, ZBIRN)
+```
+
+# Importing MMSE dataset
+```{r mmse import}
+mmse_us <- read.csv(paste0(raw_us_dir, "geras_US_mmse_bl.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(mmse_us)
+```
+
+# Filtering MMSE dataset
+```{r}
+mmse_us2 <- mmse_us %>%
+  filter((MMSED=="MMSE Total Score")) %>%
+  dplyr::select(SUBJID, MMSERN, MMSESEV)  
+dim(mmse_us2)
+```
+
+# Importing Cost dataset
+```{r cost variables}
+cost_us <- read.csv(paste0(raw_us_dir, "geras_US_costtot_bl.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+COSTQSNUM <- c("COSTPADM", "COSTPADNM", "COSTCADM", "COSTCAINM")
+dim(cost_us)
+```
+
+# Filtering cost dataset
+```{r}
+cost_us2 <- cost_us %>% 
+  filter(COSTQSNUM %in% c("COSTPADM", "COSTPADNM", "COSTCADM", "COSTCAINM")) %>% 
+  dplyr::select(SUBJID, COSTQSNUM, COSTD, COSPR1RN)
+dim(cost_us2)
+```
+
+```{r wide cost}
+cost_us_wide <- cost_us2 %>%
+  select(SUBJID, COSTQSNUM, COSPR1RN) %>%
+  pivot_wider(
+    names_from = COSTQSNUM,
+    values_from = COSPR1RN,
+    names_prefix = "COST_"
+  ) %>%
+  select(SUBJID, COST_COSTCAINM)
+
+dim(cost_us_wide)
+```
+
+# sample size flowchart
+```{r}
+df <- merge(merge(merge(merge(merge(des_us2, desc_us2, by = "SUBJID"), educ_us2, by = "SUBJID", all = T), zbi_us2, by = "SUBJID", all = T), mmse_us2, by = "SUBJID", all.x = T), cost_us2, by="SUBJID", all = T) |>
+  rename(P_AGE = ENTAGE.x, P_SEX = SEX.x, P_EDUC= SOCIOPRN, CG_AGE = ENTAGE.y, CG_SEX=SEX.y, CG_LIVEIN = CARWTPAT, CG_OTHCG = NUMCGVR, CG_REL = DMREL, ZBITOTB = ZBIRN, MMSETOTB = MMSERN )
+
+dim(df)
+
+table(df$COSTQSNUM, useNA = "always")
+  
+```
+```{r}
+df_all_us <- merge(merge(merge(merge(merge(des_us2, desc_us2, by = "SUBJID"), educ_us2, by = "SUBJID", all = T), zbi_us2, by = "SUBJID", all = T), mmse_us2, by = "SUBJID", all.x = T), cost_us_wide, by="SUBJID", all = T) |>
+  rename(P_AGE = ENTAGE.x, P_SEX = SEX.x, P_EDUC= SOCIOPRN, CG_AGE = ENTAGE.y, CG_SEX=SEX.y, CG_LIVEIN = CARWTPAT, CG_OTHCG = NUMCGVR, CG_REL = DMREL, ZBITOTB = ZBIRN, MMSETOTB = MMSERN)
+  
+dim(df_all_us)
+```
+
+```{r}
+df_all_us %>%
+  filter(P_AGE == ".")
+
+df_all_us %>%
+  filter(CG_AGE == ".")
+```
+
+```{r}
+df_all_us2 <- merge(df_all_us, comorbid_us2, by = "SUBJID", all.x = T)
+dim(df_all_us2)
+```
+
+
+
+```{r}
+df_all_us[complete.cases(df_all_us), ]
+```
+
+```{r}
+df_all_us2[complete.cases(df_all_us2), ]
+```
+
+```{r}
+table(df_all_us$TRTSORT, useNA = "always")
+table(df_all_us$TRT, useNA = "always")
+table(df_all_us2$TRT, useNA = "always")
+```
+
+
+```{r}
+df_all_us_mildAD <- df_all_us %>%
+  filter(TRTSORT == 2)
+
+df_all_us2_mildAD <- df_all_us2 %>%
+  filter(TRTSORT == 2)
+
+
+colSums(is.na(df_all_us_mildAD))
+
+colSums(is.na(df_all_us2_mildAD))
+```
+
+
+```{r}
+df_all_us_mildAD[complete.cases(df_all_us_mildAD), ]
+
+```
+
+```{r}
+df_all_us2_mildAD[complete.cases(df_all_us2_mildAD), ]
+```
+
+
+# original: 1642 pairs
+# keeping mild AD only: 815 pairs
+
+
+# Merged US dataset
+```{r merge demorel, demoralc, educ, zbi, mmse datasets}
+merged_us1 <- merge(merge(merge(merge(merge(des_us2, desc_us2, by = "SUBJID"), educ_us2, by = "SUBJID"), zbi_us2, by = "SUBJID"), mmse_us2, by = "SUBJID"), cost_us2, by="SUBJID")
+P_EDUC <- c(1, 2, 3, 4, 5) 
+dim(merged_us1)
+```
+# Cleaning the dataset
+
+```{r renaming new numeric age variables}
+merged_us2 <- merged_us1 %>% 
+   rename(P_AGE = ENTAGE.x, P_SEX = SEX.x, P_EDUC= SOCIOPRN, CG_AGE = ENTAGE.y, CG_SEX=SEX.y, CG_LIVEIN = CARWTPAT, CG_OTHCG = NUMCGVR, CG_REL = DMREL, ZBITOTB = ZBIRN, MMSETOTB = MMSERN ) %>% 
+    filter(!is.na(P_AGE), !is.na(P_SEX), !is.na(P_EDUC), !is.na(CG_AGE), !is.na(CG_SEX), !is.na(CG_LIVEIN), !is.na(CG_OTHCG), !is.na(CG_REL), !is.na(ZBITOTB), !is.na(MMSETOTB), !is.na(MMSESEV), !is.na(ETHNIC)) %>% 
+  mutate (P_AGE = ifelse(P_AGE == ">89", "90", P_AGE),
+          P_AGE1=  as.numeric(P_AGE),
+          CG_AGE = ifelse(CG_AGE == ">89", "90", CG_AGE),  
+          CG_AGE1= as.numeric(CG_AGE),
+          P_AGECAT= as.factor(ifelse(P_AGE1 <65, "1", ifelse(P_AGE1 >= 65 & P_AGE1 <= 74, "2",  ifelse(P_AGE1 >= 75 & P_AGE1 <= 84, "3", "4")))),
+          CG_AGECAT= as.factor(ifelse(CG_AGE1 <65, "1", ifelse(CG_AGE1 >= 65 & CG_AGE1 <= 74, "2",  ifelse(CG_AGE1 >= 75 & CG_AGE1 <= 84, "3", "4")))),
+          P_SEX1= as.factor(ifelse(P_SEX == "1" , "1", "2")), 
+         CG_SEX1= as.factor(ifelse(CG_SEX== "1" , "1", "2")), 
+         CG_OTHCG1=as.factor(ifelse(CG_OTHCG==0, "0", ifelse(CG_OTHCG == 1, "1", ifelse(CG_OTHCG == 2, "2", ifelse(CG_OTHCG == 3, "3", "4"))))),
+         CG_LIVEIN1= as.factor (ifelse(CG_LIVEIN == "1" , "1", "2")),
+         P_EDUC1= as.factor(ifelse(P_EDUC %in% c(1,2,3,4), "1", "2")),
+         SEVGRP = case_when(MMSETOTB >=21 ~ 1, MMSETOTB >= 15 & MMSETOTB <= 20 ~ 2, MMSETOTB <= 14 ~ 3),
+         COSPR1RN= round(COSPR1RN, digits = 2),
+         CG_REL1= as.factor(ifelse(CG_REL== 1, 1, ifelse(CG_REL == 3 , 2, 3)))) %>%
+select(SUBJID, COUNTRY,  P_SEX1, P_AGE1, P_AGECAT, P_EDUC1,  CG_AGE1, CG_AGECAT, CG_SEX1, CG_LIVEIN1, CG_OTHCG1, CG_REL1, ZBITOTB, MMSETOTB, COSTQSNUM, COSPR1RN)
+dim(merged_us2)
+#View(merged_us2)
+```
+# Final merge: Longer format to wider format dataset
+```{r merge final}
+constant_value <-0
+merged_us3 <- merged_us2 %>% 
+  pivot_wider(
+    names_from = COSTQSNUM,
+    values_from = COSPR1RN,
+    names_prefix = "COST_")
+dim(merged_us3)
+
+```
+
+```{r}
+summary(merged_us3$CG_AGE1)
+merged_us3 |> filter(is.na(CG_AGE1))
+merged_us3 |> filter(is.na(P_AGE1))
+```
+
+# Final US dataset (Sample size = 725)
+```{r}
+merged_us4_MildADonly<- merged_us3 |> 
+  mutate(CG_AGE2 = ifelse(is.na(CG_AGE1), 90, CG_AGE1) ) %>% 
+ select(-CG_AGE1)
+
+table(merged_us4_MildADonly$CG_AGE2)
+
+sapply(merged_us4_MildADonly, function(x) sum(is.na(x)))
+
+#View(merged_us4_MildADonly)
+```
+
+# add combordity
+```{r}
+merged_us4_MildADonly_plus <- merge(merged_us4_MildADonly, comorbid_us2, by="SUBJID")
+```
+
+
+save the cleaned dataset
+```{r}
+save(merged_us4_MildADonly, file = paste0(datadir,"US_MildADonly.RData"))
+
+save(merged_us4_MildADonly_plus, file = paste0(datadir,"US_MildADonly_plus.RData"))
+
+```
+
+
+#### GERAS-JAPAN ####
+
+# Importing Patient Demographic dataset
+```{r}
+des_japan <- read.csv(paste0(raw_jp_dir, "geras_JAPAN_adcov.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(des_japan)
+```
+
+# Filtering Patient Demographic dataset
+```{r}
+#' Removing missing values from sex and severity
+des_japan2 <- des_japan %>% 
+  filter(!is.na(SEVGRPCD), !is.na(C_SEXCD), (VISIT=="Baseline")) %>% 
+  dplyr:: select(SUBJID, COUNTRY,  VISIT, C_SEXCD, C_AGE, C_EDUCCD, C_CGAGE, C_CGSEXCD, C_CGLIVEIN, C_CGNOTHCD, C_CGREL2CD, C_LIVLOCCD, C_ALONE, C_MARRIEDYN, C_NPCC)  
+dim(des_japan2)
+
+```
+
+## Patient characteristics
+```{r}
+comorbid_japan<- read.csv(paste0(raw_jp_dir, "geras_JAPAN_adccp.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+```
+
+
+```{r}
+comorbid_japan2 <- comorbid_japan %>% 
+  filter(VISIT=="Baseline") %>%
+  mutate(cmbdts = NPCC) %>%
+  select(SUBJID, cmbdts)
+```
+
+
+# Importing ZBI dataset
+```{r}
+zbi_japan <- read.csv(paste0(raw_jp_dir, "geras_JAPAN_adzbi.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(zbi_japan)
+```
+
+# Filtering ZBI dataset
+```{r}
+zbi_japan2 <- zbi_japan %>%
+  filter(!is.na(SEVGRPCD), !is.na(ZBITOTB), (VISIT=="Baseline")) %>%
+  dplyr::select (SUBJID, ZBITOTB)
+dim(zbi_japan2)
+```
+
+# Importing MMSE dataset
+```{r}
+mmse_japan <- read.csv(paste0(raw_jp_dir, "geras_JAPAN_admmse.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(mmse_japan)
+```
+
+# Filtering MMSE dataset
+```{r}
+#' Removing missing values from sex and severity
+mmse_japan2 <- mmse_japan %>%
+  filter(!is.na(SEVGEUCD), !is.na(MMSETOTB), !is.na(VISIT), VISIT=="Baseline")%>%
+    dplyr::select(SUBJID, SEVGEUCD, MMSETOTB) 
+```
+
+# Importing Cost dataset
+```{r}
+cost_japan <- read.csv(paste0(raw_jp_dir, "geras_JAPAN_adcost.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(cost_japan)
+```
+
+# Filtering cost dataset
+```{r}
+cost_japan2 <- cost_japan %>% 
+  filter(!is.na(SEVGRPCD), (VISIT=="Baseline"), (CURRENCY== "USD")) %>%
+  dplyr::select (SUBJID, CURRENCY, COST_DMP, COST_DNP, COST_DMC, COST_INC_OP_C24)
+dim(cost_japan2)
+```
+
+# sample size flowchart
+## check the number of participants excluded when deriving the analytic datasets
+```{r}
+df_all_jp <- merge(merge(merge(des_japan2, zbi_japan2, by="SUBJID", all = T), mmse_japan2, by="SUBJID", all = T), cost_japan2, by="SUBJID", all = T) |>
+  rename( P_SEX = C_SEXCD, P_EDUC= C_EDUCCD, CG_SEX=C_CGSEXCD, CG_LIVEIN = C_CGLIVEIN, CG_OTHCG = C_CGNOTHCD, CG_REL = C_CGREL2CD, P_LIVLOC = C_LIVLOCCD, P_CC = C_NPCC, P_ALONE = C_ALONE, P_MARRIED = C_MARRIEDYN, COST_COSTPADM = COST_DMP, COST_COSTPADNM = COST_DNP, COST_COSTCADM = COST_DMC, COST_COSTCAINM= COST_INC_OP_C24  )
+  
+dim(df_all_jp)
+```
+
+
+```{r}
+df_all_jp %>%
+  filter(C_AGE == ".")
+
+df_all_jp %>%
+  filter(C_CGAGE == ".")
+```
+
+
+```{r}
+df_all_jp$C_CGAGE[df_all_jp$C_CGAGE == "."] <- NA
+```
+
+
+```{r}
+df_all_jp2 <-merge(df_all_jp, comorbid_japan2, by = "SUBJID", all.x = T) 
+dim(df_all_jp2)
+```
+
+```{r}
+df_all_jp[complete.cases(df_all_jp), ]
+```
+
+```{r}
+df_all_jp2[complete.cases(df_all_jp2), ]
+```
+
+```{r}
+table(df_all_jp$C_CGAGE, useNA = "always")
+colSums(is.na(df_all_jp))
+colSums(is.na(df_all_jp2))
+```
+
+
+# JAPAN merged dataset
+```{r merge1}
+merged_japan1 <- merge(merge(merge(des_japan2, zbi_japan2, by="SUBJID"), mmse_japan2, by="SUBJID"), cost_japan2, by="SUBJID")
+dim(merged_japan1)
+```
+# Cleaning the dataset 
+# Final Japan Datset (Sample size = 553)
+
+```{r renaming new variables}
+merged_japan4 <- merged_japan1 %>% 
+  rename( P_SEX = C_SEXCD, P_EDUC= C_EDUCCD, CG_SEX=C_CGSEXCD, CG_LIVEIN = C_CGLIVEIN, CG_OTHCG = C_CGNOTHCD, CG_REL = C_CGREL2CD, P_LIVLOC = C_LIVLOCCD, P_CC = C_NPCC, P_ALONE = C_ALONE, P_MARRIED = C_MARRIEDYN, COST_COSTPADM = COST_DMP, COST_COSTPADNM = COST_DNP, COST_COSTCADM = COST_DMC, COST_COSTCAINM= COST_INC_OP_C24  ) %>% 
+    filter(!is.na(SEVGEUCD), !is.na(ZBITOTB), !is.na(C_AGE), !is.na(P_SEX), !is.na(P_EDUC), !is.na(C_CGAGE), !is.na(CG_SEX), !is.na(CG_LIVEIN), !is.na(CG_OTHCG), !is.na(CG_REL), !is.na(P_LIVLOC), !is.na(P_CC), !is.na(P_ALONE), !is.na(P_MARRIED), C_CGAGE != ".") %>% 
+  mutate (P_AGE = ifelse(C_AGE == ">89", "90", C_AGE),
+          P_AGE1 = as.numeric(P_AGE),
+          CG_AGE1 = ifelse(C_CGAGE == ">89", "90", C_CGAGE),
+          CG_AGE2 = as.numeric(CG_AGE1),
+          P_AGECAT= as.factor(ifelse(P_AGE1 <65, "1", ifelse(P_AGE1 >= 65 & P_AGE1 <= 74, "2",  ifelse(P_AGE1 >= 75 & P_AGE1 <= 84, "3", "4")))),
+          CG_AGECAT= as.factor(ifelse(CG_AGE2 <65, "1", ifelse(CG_AGE2 >= 65 & CG_AGE2 <= 74, "2",  ifelse(CG_AGE2 >= 75 & CG_AGE2 <= 84, "3", "4")))),
+         P_SEX1= as.factor(ifelse(P_SEX == "0" , "1", "2")), 
+         CG_SEX1= as.factor(ifelse(CG_SEX== "0" , "1", "2")), 
+         CG_OTHCG1=as.factor(ifelse(CG_OTHCG==0, "0", ifelse(CG_OTHCG == 1, "1", ifelse(CG_OTHCG == 2, "2", ifelse(CG_OTHCG == 3, "3", "4"))))),
+         P_CC1=as.factor(ifelse(P_CC==0, "0", ifelse(P_CC == 1, "1", ifelse(P_CC == 2, "2", ifelse(P_CC == 3, "3", "4"))))),
+         CG_LIVEIN1= as.factor (ifelse(CG_LIVEIN == "Y" , "1", "2")),
+         SEVGRP= as.factor(ifelse(SEVGEUCD == 1, "1", ifelse(SEVGEUCD == 2, "2", "3"))),
+         P_EDUC1= as.factor(ifelse(P_EDUC %in% c(1,2), "1", "2")),
+         P_LIVLOC1= as.factor(ifelse(P_LIVLOC == 1, "1", "2")),
+         P_ALONE1= as.factor(ifelse(P_ALONE == 0, "0", "1")),
+         P_MARRIED1= as.factor(ifelse(P_MARRIED == 0, "0", "1")),
+         CG_REL1= as.factor(ifelse(CG_REL == 1, "1", ifelse(CG_REL == 2, "2", "3")))) %>% 
+dplyr::select(SUBJID, COUNTRY, P_SEX1, P_AGE1, P_AGECAT, P_EDUC1, CG_AGE2, CG_AGECAT, CG_SEX1, CG_LIVEIN1, CG_OTHCG1, CG_REL1, COST_COSTPADM, COST_COSTPADNM, COST_COSTCADM, COST_COSTCAINM, ZBITOTB, MMSETOTB)
+dim(merged_japan4)
+#View(merged_japan4)
+```
+
+# add combordity
+```{r}
+merged_japan4_plus <- merge(merged_japan4, comorbid_japan2, by="SUBJID")
+```
+
+save the cleaned dataset
+```{r}
+save(merged_japan4, file = paste0(datadir,"Geras-Japan.RData"))
+
+save(merged_japan4_plus, file = paste0(datadir,"Geras-Japan_plus.RData"))
+```
+
+#### GERAS_SPAIN ####
+
+# Including  transformed cost variables in USD
+
+# Importing Patient Demographic dataset
+```{r}
+des_spain <- read.csv(paste0(raw_ii_dir, "geras_II_demorel.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(des_spain)
+```
+
+# Separate dataset for patient demographics (demotype=1)
+```{r}
+despat_spain2 <- des_spain %>%
+  filter(!is.na(ENTAGE), !is.na(TRTSORT), !is.na(SEXLNM), (DEMOTYPE == 1), (VISID == 1), (COUNTRYL == "SPAIN")) %>%
+  dplyr::select(SUBJID, COUNTRYL, TRTSORT, SEX, SEXLNM, ENTAGE, DEMOTYPE)
+dim(despat_spain2)
+```
+
+# Separate dataset for caregiver demographics (demotype=6)
+```{r}
+descar_spain2 <- des_spain %>%
+  filter(!is.na(ENTAGE), !is.na(TRTSORT), !is.na(SEXLNM), (DEMOTYPE == 6), (VISID == 1), (COUNTRYL == "SPAIN")) %>%
+  dplyr::select(SUBJID,  SEX, SEXLNM, ENTAGE, DEMOTYPE)
+dim(descar_spain2)
+```
+
+
+## Patient characteristics
+```{r}
+comorbid_spain<-read.csv(paste0(raw_ii_dir, "geras_II_mhcmbd.csv"))
+```
+
+```{r}
+comorbid_spain2 <- comorbid_spain %>% filter(COUNTRYL == "SPAIN", MHTYPE==1, VISID == 1) #Restrict to patient
+
+comorbid_spain3  <- comorbid_spain2 %>%
+  select(SUBJID, ANYDIAFL) %>%
+  group_by(SUBJID) %>%
+  summarise(cmbdts = sum(ANYDIAFL), .groups = "drop") 
+```
+
+
+# Importing Caregiver demographic dataset
+```{r}
+desc_spain <- read.csv(paste0(raw_ii_dir, "geras_II_demorelc.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(desc_spain)
+```
+
+
+# Filtering Caregiver demographic dataset
+```{r}
+desc_spain2 <- desc_spain %>%
+  filter(!is.na(DMRELLNM), !is.na(CWTPTLNM), !is.na(TRTSORT), (VISID == 1), (COUNTRYL == "SPAIN")) %>%
+  dplyr::select(SUBJID, DMRELLNM, CWTPTLNM)
+dim(desc_spain2)
+```
+
+# Importing ZBI dataset
+```{r}
+zbi_spain <- read.csv(paste0(raw_ii_dir, "geras_II_zbiervat.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(zbi_spain)
+```
+
+# Filtering ZBI dataset
+```{r}
+zbi_spain2 <- zbi_spain %>%
+  filter( !is.na(TRTSORT), (ZBIQSNUM == "ZBITS"), (VISID == 1), (COUNTRYL == "SPAIN")) %>%
+  dplyr::select(SUBJID, ZBIQSNUM, ZBIRN)
+dim(zbi_spain2)
+```
+
+# Importing RUD dataset to calculate no. of other caregivers
+```{r}
+rud_spain <- read.csv(paste0(raw_ii_dir, "geras_II_rud.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(rud_spain)
+```
+
+# Filtering RUD dataset
+```{r}
+rud_spain2 <- rud_spain %>%
+  filter( !is.na(TRTSORT), (RUDQSNUM == "RUDRES2"), !is.na(RUDRC), (VISID == 1), (COUNTRYL == "SPAIN")) %>%
+  dplyr::select(SUBJID, RUDQSNUM, RUDRC)
+dim(rud_spain2)
+```
+
+# Importing EDC dataset to calculate no. years of formal education
+```{r}
+educ_spain <- read.csv(paste0(raw_ii_dir, "geras_II_edc.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(educ_spain)
+```
+
+# Filtering EDC dataset
+```{r}
+educ_spain2 <- educ_spain %>%
+  filter( !is.na(TRTSORT), !is.na(EDCRN), (VISID == 1), (COUNTRYL == "SPAIN")) %>%
+  dplyr::select(SUBJID, EDCRN)
+dim(educ_spain2)
+```
+
+# Importing MMSE dataset
+```{r}
+mmse_spain <- read.csv(paste0(raw_ii_dir, "geras_II_mmse.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(mmse_spain)
+```
+
+# Filtering MMSE dataset
+```{r}
+mmse_spain2 <- mmse_spain %>%
+  filter((MMSED=="MMSE Total Score"), !is.na(MMSERN), (VISID == 1), !is.na(TRTSORT), (COUNTRYL == "SPAIN")) %>%
+  dplyr::select(SUBJID, MMSERN)  
+dim(mmse_spain2)
+```
+
+
+# Importing Cost dataset
+```{r}
+cost_spain <- read.csv(paste0(raw_ii_dir, "geras_II_costtot.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+#COSTQSNUM <- c("COSTPADM", "COSTPADNM", "COSTCADM", "COSTCAINM", "COSTTOT")
+dim(cost_spain)
+#View(cost_spain)
+```
+
+# Filtering cost dataset
+```{r}
+cost_spain2 <- cost_spain %>% 
+  filter(COSTQSNUM %in% c("COSTPADM", "COSTPADNM", "COSTCADM", "COSTCAINM"), !is.na(COSPR1RN), (VISID == 1), !is.na(TRTSORT), (COUNTRYL == "SPAIN")) %>% 
+  dplyr::select(SUBJID, COSTQSNUM, COSTD, COSPR1RN) 
+
+dim(cost_spain2)
+#View(cost_spain2)
+```
+
+```{r wide cost}
+cost_spain_wide <- cost_spain2 %>%
+  select(SUBJID, COSTQSNUM, COSPR1RN) %>%
+  pivot_wider(
+    names_from = COSTQSNUM,
+    values_from = COSPR1RN,
+    names_prefix = "COST_"
+  ) %>%
+  select(SUBJID, COST_COSTCAINM)
+
+dim(cost_spain_wide)
+```
+
+
+# sample size flowchart
+## check the number of participants excluded when deriving the analytic datasets
+```{r}
+df_all_sp <-merge(merge(merge(merge(merge(merge(merge(despat_spain2, descar_spain2, by = "SUBJID", all = T), desc_spain2, by = "SUBJID", all = T), zbi_spain2, by = "SUBJID", all = T), rud_spain2, by = "SUBJID", all = T), cost_spain_wide, by="SUBJID", all = T), educ_spain2, by="SUBJID", all = T), mmse_spain2, by="SUBJID", all = T) |>
+  rename(P_AGE = ENTAGE.x, P_SEX = SEXLNM.x, COUNTRY = COUNTRYL, CG_SEX = SEXLNM.y, CG_AGE = ENTAGE.y, CG_REL = DMRELLNM, CG_LIVEIN = CWTPTLNM, SEVGRPCD = TRTSORT, ZBITOTB = ZBIRN, CG_OTHCG = RUDRC, P_EDUC = EDCRN, MMSETOTB = MMSERN)
+
+dim(df_all_sp)
+```
+
+
+```{r}
+df_all_sp %>%
+  filter(P_AGE == ".")
+
+df_all_sp %>%
+  filter(CG_AGE == ".")
+```
+
+
+```{r}
+df_all_sp[complete.cases(df_all_sp), ]
+```
+
+
+```{r}
+df_all_sp2 <-merge(df_all_sp, comorbid_spain3, by = "SUBJID", all.x = T)
+dim(df_all_sp2)
+```
+
+
+
+```{r}
+df_all_sp2[complete.cases(df_all_sp2), ]
+```
+
+```{r}
+colSums(is.na(df_all_sp))
+```
+
+
+```{r}
+colSums(is.na(df_all_sp2))
+```
+
+
+## Merged Geras-II (Spain) dataset
+```{r merged datasets}
+merged_spain1 <- merge(merge(merge(merge(merge(merge(merge(despat_spain2, descar_spain2, by = "SUBJID"), desc_spain2, by = "SUBJID"), zbi_spain2, by = "SUBJID"), rud_spain2, by = "SUBJID"), cost_spain2, by="SUBJID"), educ_spain2, by="SUBJID"), mmse_spain2, by="SUBJID")
+dim(merged_spain1)
+```
+
+# Cleaning the dataset
+
+```{r cleaning dataset}
+merged_spain2 <- merged_spain1 %>%
+  rename(P_AGE = ENTAGE.x, P_SEX = SEXLNM.x, COUNTRY = COUNTRYL, CG_SEX = SEXLNM.y, CG_AGE = ENTAGE.y, CG_REL = DMRELLNM, CG_LIVEIN = CWTPTLNM, SEVGRPCD = TRTSORT, ZBITOTB = ZBIRN, CG_OTHCG = RUDRC, P_EDUC = EDCRN, MMSETOTB = MMSERN) %>%
+  filter(!is.na(P_AGE), !is.na(P_SEX), !is.na(CG_AGE), !is.na(CG_SEX), !is.na(CG_LIVEIN), !is.na(CG_OTHCG), !is.na(CG_REL), !is.na(ZBITOTB), !is.na(SEVGRPCD)) %>% 
+   mutate (P_AGE= ifelse(P_AGE == ">89", "90", P_AGE),
+           P_AGE1= as.numeric(P_AGE),
+           CG_AGE= ifelse(CG_AGE == ">89", "90", CG_AGE),
+           CG_AGE2= as.numeric(CG_AGE),
+          P_AGECAT= as.factor(ifelse(P_AGE1 <65, "1", ifelse(P_AGE1 >= 65 & P_AGE1 <= 74, "2",  ifelse(P_AGE1 >= 75 & P_AGE1 <= 84, "3", "4")))),
+          CG_AGECAT= as.factor(ifelse(CG_AGE2 <65, "1", ifelse(CG_AGE2 >= 65 & CG_AGE2 <= 74, "2",  ifelse(CG_AGE2 >= 75 & CG_AGE2 <= 84, "3", "4")))),
+          P_SEX1= as.factor(ifelse(P_SEX == "Male" , "1", "2")), 
+         CG_SEX1= as.factor(ifelse(CG_SEX== "Male" , "1", "2")), 
+         P_EDUC1= as.factor(ifelse(P_EDUC <= 12, "1", "2")),
+         CG_OTHCG1=as.factor(ifelse(CG_OTHCG==0, "0", ifelse(CG_OTHCG == 1, "1", ifelse(CG_OTHCG == 2, "2", ifelse(CG_OTHCG == 3, "3", "4"))))),
+         SEVGRP= as.factor(SEVGRPCD),
+         CG_LIVEIN1= as.factor (ifelse(CG_LIVEIN == "Yes" , "1", "2")),
+         CG_REL1= as.factor(ifelse(CG_REL %in% c("Husband", "Wife"), 1, ifelse(CG_REL == "Child", 2, 3)))) %>%
+dplyr::select(SUBJID, COUNTRY, P_SEX1, P_AGE1, CG_AGE2,CG_SEX1, CG_LIVEIN1, CG_OTHCG1, CG_REL1, ZBITOTB, COSTQSNUM, COSPR1RN, P_AGECAT, CG_AGECAT, P_EDUC1, MMSETOTB)
+dim(merged_spain2)
+```
+
+# Final merge: Longer format to wider format dataset
+
+# Final Dataset (Sample size = 368)
+```{r merge final}
+merged_spain4 <- merged_spain2 %>% 
+  pivot_wider(
+    names_from = COSTQSNUM,
+    values_from = COSPR1RN,
+    names_prefix = "COST_")
+dim(merged_spain4)
+```
+
+
+# add combordity
+```{r}
+merged_spain4_plus <- merge(merged_spain4, comorbid_spain3, by="SUBJID")
+```
+
+
+save the cleaned dataset
+```{r}
+save(merged_spain4, file = paste0(datadir,"Spain.RData"))
+
+save(merged_spain4_plus, file = paste0(datadir,"Spain_plus.RData"))
+```
+
+
+#### GERAS_ITALY ####
+
+# Including  transformed cost variables in USD
+
+# Importing Patient Demographic dataset
+```{r}
+des_italy <- read.csv(paste0(raw_ii_dir, "geras_II_demorel.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(des_italy)
+```
+
+# Separate dataset for patient demographics (demotype=1)
+```{r}
+despat_italy2 <- des_italy %>%
+  filter(!is.na(ENTAGE), !is.na(TRTSORT), !is.na(SEXLNM), (DEMOTYPE == 1), (VISID == 1), (COUNTRYL == "ITALY")) %>%
+  dplyr::select(SUBJID, COUNTRYL, TRTSORT, SEX, SEXLNM, ENTAGE, DEMOTYPE)
+dim(despat_italy2)
+```
+
+# Separate dataset for caregiver demographics (demotype=6)
+```{r}
+descar_italy2 <- des_italy %>%
+  filter(!is.na(ENTAGE), !is.na(TRTSORT), !is.na(SEXLNM), (DEMOTYPE == 6), (VISID == 1), (COUNTRYL == "ITALY")) %>%
+  dplyr::select(SUBJID,  SEX, SEXLNM, ENTAGE, DEMOTYPE)
+dim(descar_italy2)
+```
+```{r}
+table(descar_italy2$SEX, descar_italy2$SEXLNM)
+```
+
+
+## Patient characteristics
+```{r}
+comorbid_italy<-read.csv(paste0(raw_ii_dir, "geras_II_mhcmbd.csv"))
+```
+
+```{r}
+comorbid_italy2 <- comorbid_spain %>% filter(COUNTRYL == "ITALY", MHTYPE==1, VISID == 1) #Restrict to patient
+
+comorbid_italy3  <- comorbid_italy2 %>%
+  select(SUBJID, ANYDIAFL) %>%
+  group_by(SUBJID) %>%
+  summarise(cmbdts = sum(ANYDIAFL), .groups = "drop") 
+```
+
+# Importing Caregiver demographic dataset
+```{r}
+
+desc_italy <- read.csv(paste0(raw_ii_dir, "geras_II_demorelc.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(desc_italy)
+```
+
+# Filtering Caregiver demographic dataset
+```{r}
+desc_italy2 <- desc_italy %>%
+  filter(!is.na(DMRELLNM), !is.na(CWTPTLNM), !is.na(TRTSORT), (VISID == 1), (COUNTRYL == "ITALY")) %>%
+  dplyr::select(SUBJID, DMRELLNM, CWTPTLNM)
+dim(desc_italy2)
+```
+
+# Importing ZBI dataset
+```{r}
+
+zbi_italy <- read.csv(paste0(raw_ii_dir, "geras_II_zbiervat.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(zbi_italy)
+```
+
+# Filtering ZBI dataset
+```{r}
+zbi_italy2 <- zbi_italy %>%
+  filter( !is.na(TRTSORT), (ZBIQSNUM == "ZBITS"), (VISID == 1), (COUNTRYL == "ITALY")) %>%
+  dplyr::select(SUBJID, ZBIQSNUM, ZBIRN)
+dim(zbi_italy2)
+```
+
+# Importing RUD dataset to calculate no. of other caregivers
+```{r}
+rud_italy <- read.csv(paste0(raw_ii_dir, "geras_II_rud.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(rud_italy)
+```
+
+# Filtering RUD dataset
+```{r}
+rud_italy2 <- rud_italy %>%
+  filter( !is.na(TRTSORT), (RUDQSNUM == "RUDRES2"), !is.na(RUDRC), (VISID == 1), (COUNTRYL == "ITALY")) %>%
+  dplyr::select(SUBJID, RUDQSNUM, RUDRC)
+dim(rud_italy2)
+```
+
+# Importing EDC dataset to calculate no. years of formal education
+```{r}
+
+educ_italy <- read.csv(paste0(raw_ii_dir, "geras_II_edc.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(educ_italy)
+```
+
+# Filtering EDC dataset
+```{r}
+educ_italy2 <- educ_italy %>%
+  filter( !is.na(TRTSORT), !is.na(EDCRN), (VISID == 1), (COUNTRYL == "ITALY")) %>%
+  dplyr::select(SUBJID, EDCRN)
+dim(educ_italy2)
+```
+
+# Importing MMSE dataset
+```{r}
+
+mmse_italy <- read.csv(paste0(raw_ii_dir, "geras_II_mmse.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+dim(mmse_italy)
+```
+
+# Filtering MMSE dataset
+```{r}
+mmse_italy2 <- mmse_italy %>%
+  filter((MMSED=="MMSE Total Score"), !is.na(MMSERN), (VISID == 1), !is.na(TRTSORT), (COUNTRYL == "ITALY")) %>%
+  dplyr::select(SUBJID, MMSERN)  
+dim(mmse_italy2)
+```
+
+
+# Importing Cost dataset
+```{r}
+cost_italy <- read.csv(paste0(raw_ii_dir, "geras_II_costtot.csv"), header=TRUE, sep=",", stringsAsFactors = FALSE, na.strings="NA")
+#COSTQSNUM <- c("COSTPADM", "COSTPADNM", "COSTCADM", "COSTCAINM", "COSTTOT")
+dim(cost_italy)
+```
+
+# Filtering cost dataset
+```{r}
+cost_italy2 <- cost_italy %>% 
+  filter(COSTQSNUM %in% c("COSTPADM", "COSTPADNM", "COSTCADM", "COSTCAINM"), !is.na(COSPR1RN), (VISID == 1), !is.na(TRTSORT), (COUNTRYL == "ITALY")) %>% 
+  dplyr::select(SUBJID, COSTQSNUM, COSTD, COSPR1RN) 
+
+dim(cost_italy2)
+#View(cost_italy2)
+```
+
+```{r wide cost}
+cost_italy_wide <- cost_italy2 %>%
+  select(SUBJID, COSTQSNUM, COSPR1RN) %>%
+  pivot_wider(
+    names_from = COSTQSNUM,
+    values_from = COSPR1RN,
+    names_prefix = "COST_"
+  ) %>%
+  select(SUBJID, COST_COSTCAINM)
+
+dim(cost_italy_wide)
+```
+
+
+## check the number of participants excluded when deriving the analytic datasets
+```{r}
+df_all_it <- merge(merge(merge(merge(merge(merge(merge(despat_italy2, descar_italy2, by = "SUBJID", all = T), desc_italy2, by = "SUBJID", all = T), zbi_italy2, by = "SUBJID", all = T), rud_italy2, by = "SUBJID", all = T), cost_italy_wide, by="SUBJID", all = T), educ_italy2, by="SUBJID", all = T), mmse_italy2, by="SUBJID", all = T) |>
+  rename(P_AGE = ENTAGE.x, P_SEX = SEXLNM.x, COUNTRY = COUNTRYL, CG_SEX = SEXLNM.y, CG_AGE = ENTAGE.y, CG_REL = DMRELLNM, CG_LIVEIN = CWTPTLNM, SEVGRPCD = TRTSORT, ZBITOTB = ZBIRN, CG_OTHCG = RUDRC, P_EDUC = EDCRN, MMSETOTB = MMSERN)
+
+  
+dim(df_all_it)
+```
+
+```{r}
+df_all_it %>%
+  filter(P_AGE == ".")
+
+df_all_it %>%
+  filter(CG_AGE == ".")
+```
+
+
+```{r}
+df_all_it2 <-merge(df_all_it, comorbid_italy3, by = "SUBJID", all.x = T) 
+dim(df_all_it2)
+```
+
+
+```{r}
+df_all_it[complete.cases(df_all_it), ]
+```
+
+
+```{r}
+df_all_it2[complete.cases(df_all_it2), ]
+```
+
+```{r}
+colSums(is.na(df_all_it))
+```
+
+```{r}
+colSums(is.na(df_all_it2))
+```
+
+
+## Merged Geras-II (italy) dataset
+```{r merged datasets}
+merged_italy1 <- merge(merge(merge(merge(merge(merge(merge(despat_italy2, descar_italy2, by = "SUBJID"), desc_italy2, by = "SUBJID"), zbi_italy2, by = "SUBJID"), rud_italy2, by = "SUBJID"), cost_italy2, by="SUBJID"), educ_italy2, by="SUBJID"), mmse_italy2, by="SUBJID")
+dim(merged_italy1)
+```
+# Cleaning the dataset
+
+```{r}
+merged_italy2 <- merged_italy1 %>%
+  rename(P_AGE = ENTAGE.x, P_SEX = SEXLNM.x, COUNTRY = COUNTRYL, CG_SEX = SEXLNM.y, CG_AGE = ENTAGE.y, CG_REL = DMRELLNM, CG_LIVEIN = CWTPTLNM, SEVGRPCD = TRTSORT, ZBITOTB = ZBIRN, CG_OTHCG = RUDRC, P_EDUC = EDCRN, MMSETOTB = MMSERN) %>%
+  filter(!is.na(P_AGE), !is.na(P_SEX), !is.na(CG_AGE), !is.na(CG_SEX), !is.na(CG_LIVEIN), !is.na(CG_OTHCG), !is.na(CG_REL), !is.na(ZBITOTB), !is.na(SEVGRPCD)) %>% 
+   mutate (P_AGE = ifelse(P_AGE == ">89", "90", P_AGE),
+          P_AGE1= as.numeric(P_AGE),
+          CG_AGE= ifelse(CG_AGE == ">89", "90", CG_AGE),
+          CG_AGE2= as.numeric(CG_AGE),
+          P_AGECAT= as.factor(ifelse(P_AGE1 <65, "1", ifelse(P_AGE1 >= 65 & P_AGE1 <= 74, "2",  ifelse(P_AGE1 >= 75 & P_AGE1 <= 84, "3", "4")))),
+          CG_AGECAT= as.factor(ifelse(CG_AGE2 <65, "1", ifelse(CG_AGE2 >= 65 & CG_AGE2 <= 74, "2",  ifelse(CG_AGE2 >= 75 & CG_AGE2 <= 84, "3", "4")))),
+          P_SEX1= as.factor(ifelse(P_SEX == "Male" , "1", "2")), 
+         CG_SEX1= as.factor(ifelse(CG_SEX== "Male" , "1", "2")), 
+         P_EDUC1= as.factor(ifelse(P_EDUC <= 12, "1", "2")),
+         CG_OTHCG1=as.factor(ifelse(CG_OTHCG==0, "0", ifelse(CG_OTHCG == 1, "1", ifelse(CG_OTHCG == 2, "2", ifelse(CG_OTHCG == 3, "3", "4"))))),
+         SEVGRP= as.factor(SEVGRPCD),
+         CG_LIVEIN1= as.factor (ifelse(CG_LIVEIN == "Yes" , "1", "2")),
+         CG_REL1= as.factor(ifelse(CG_REL %in% c("Husband", "Wife"), 1, ifelse(CG_REL == "Child", 2, 3)))) %>%
+dplyr::select(SUBJID, COUNTRY, P_SEX1, P_AGE1, CG_AGE2,CG_SEX1, CG_LIVEIN1, CG_OTHCG1, CG_REL1, ZBITOTB, COSTQSNUM, COSPR1RN, P_AGECAT, CG_AGECAT, P_EDUC1, MMSETOTB)
+dim(merged_italy2)
+```
+# Final merge: Longer format to wider format dataset
+
+#Final dataset (Sample size = 193)
+```{r merge final}
+merged_italy4 <- merged_italy2 %>% 
+  pivot_wider(
+    names_from = COSTQSNUM,
+    values_from = COSPR1RN,
+    names_prefix = "COST_")
+dim(merged_italy4)
+```
+
+# add combordity
+```{r}
+merged_italy4_plus <- merge(merged_italy4, comorbid_italy3, by="SUBJID")
+```
+
+save the cleaned dataset
+```{r}
+save(merged_italy4, file = paste0(datadir,"Italy.RData"))
+
+save(merged_italy4_plus, file = paste0(datadir,"Italy_plus.RData"))
+```
+
+
+save the uncleaned dataset (for flowchart)
+```{r}
+save(df_all_eu2, pat_w_multi_cargivers, file = paste0(datadir,"EU_flowchart.RData"))
+save(df_all_us2, file = paste0(datadir,"US_flowchart.RData"))
+save(df_all_us2_mildAD, file = paste0(datadir,"US_mildAD_flowchart.RData"))
+save(df_all_jp2, file = paste0(datadir,"JP_flowchart.RData"))
+save(df_all_sp2, file = paste0(datadir,"SP_flowchart.RData"))
+save(df_all_it2, file = paste0(datadir,"IT_flowchart.RData"))
+```
+
+
+# Currencies for US and Japan are in USD. The currencies for Spain, Italy and GERAS-EU are available in Euro. We converted the currency Euroes to USD for Spain and Italy datasets to merge all four datasets effectively. 
+
+```{r}
+datadir <- project_dir(c("data", "20251029_7c"), envvar = "ADCOST_DATA_DIR", create = TRUE)
+```
+
+```{r}
+merge_opt = "1"
+# 1: merge original data
+# 2: merge plus data (with additional covariates)
+```
+
+
+# load existing datasets
+```{r}
+if (merge_opt == "1") {
+  load(paste0(datadir,"EU.RData"))
+  load(paste0(datadir,"US_MildADonly.RData"))
+  load(paste0(datadir,"Geras-Japan.RData"))
+  load(paste0(datadir,"Italy.RData"))
+  load(paste0(datadir,"Spain.RData"))
+}else if (merge_opt == "2") {
+  load(paste0(datadir,"EU_plus.RData"))
+  load(paste0(datadir,"US_MildADonly_plus.RData"))
+  load(paste0(datadir,"Geras-Japan_plus.RData"))
+  load(paste0(datadir,"Italy_plus.RData"))
+  load(paste0(datadir,"Spain_plus.RData"))
+  
+  merged_eu4 <- merged_eu4_plus
+  merged_us4_MildADonly <- merged_us4_MildADonly_plus
+  merged_japan4 <- merged_japan4_plus 
+  merged_spain4 <- merged_spain4_plus
+  merged_italy4 <- merged_italy4_plus
+}
+
+```
+
+
+# Normalizing EU Cost Variables 
+```{r}
+# Normalize Caregiver Informal Care Costs
+merged_eu5 <- merged_eu4 %>% 
+  group_by(COUNTRY) %>%
+  mutate(norm_cainm = (COST_COSTCAINM - mean(COST_COSTCAINM)) / sd(COST_COSTCAINM),
+         norm_cadm = (COST_COSTCADM - mean(COST_COSTCADM)) / sd(COST_COSTCADM)) %>%
+  ungroup()
+```
+
+# Normalizing US Cost Variables 
+```{r}
+merged_us5_MildADonly <- merged_us4_MildADonly %>% 
+  mutate(norm_cainm = (COST_COSTCAINM - mean(COST_COSTCAINM)) / sd(COST_COSTCAINM),
+         norm_cadm = (COST_COSTCADM - mean(COST_COSTCADM)) / sd(COST_COSTCADM))
+
+```
+
+# Normalizing Japan Cost Variables 
+```{r}
+merged_japan5 <- merged_japan4 %>% 
+  mutate(norm_cainm = (COST_COSTCAINM - mean(COST_COSTCAINM)) / sd(COST_COSTCAINM),
+         norm_cadm = (COST_COSTCADM - mean(COST_COSTCADM)) / sd(COST_COSTCADM))
+```
+
+# Normalizing Spain Cost Variables 
+```{r}
+merged_spain5 <- merged_spain4 %>% 
+  mutate(norm_cainm = (COST_COSTCAINM - mean(COST_COSTCAINM)) / sd(COST_COSTCAINM),
+         norm_cadm = (COST_COSTCADM - mean(COST_COSTCADM)) / sd(COST_COSTCADM))
+```
+
+# Normalizing Italy Cost Variables 
+```{r}
+merged_italy5 <- merged_italy4 %>% 
+  mutate(norm_cainm = (COST_COSTCAINM - mean(COST_COSTCAINM)) / sd(COST_COSTCAINM),
+         norm_cadm = (COST_COSTCADM - mean(COST_COSTCADM)) / sd(COST_COSTCADM))
+```
+
+```{r}
+names(merged_eu5)
+names(merged_japan5)
+```
+
+```{r}
+setdiff(names(merged_eu5), names(merged_japan5))
+```
+
+# Merging Japan, US, Spain and Italy datasets
+```{r}
+merged_analysis <- rbind(merged_japan5, merged_us5_MildADonly, merged_spain5, merged_italy5, merged_eu5)
+merged_analysis$COUNTRY <- as.factor(merged_analysis$COUNTRY)
+dim(merged_analysis)
+```
+
+```{r}
+table(merged_analysis$COUNTRY)
+```
+
+# convert to US dollar in 2020
+```{r}
+merged_analysis$COST_COSTCAINM_orig <- merged_analysis$COST_COSTCAINM
+merged_analysis$COST_COSTCADM_orig <- merged_analysis$COST_COSTCADM
+```
+
+
+```{r}
+merged_analysis2 <- merged_analysis %>% 
+  mutate(COST_COSTCAINM = ifelse(COUNTRY == "FRANCE", COST_COSTCAINM_orig * IF_rate["FR"] * US_rate["FR"], ifelse(COUNTRY == "GERMANY", COST_COSTCAINM_orig * IF_rate["DE"] * US_rate["DE"], 
+ifelse(COUNTRY == "UNITED KINGDOM", COST_COSTCAINM_orig * IF_rate["UK"] * US_rate["UK"],                    ifelse(COUNTRY == "ITALY", COST_COSTCAINM_orig * IF_rate["IT"] * US_rate["IT"],                    ifelse(COUNTRY == "SPAIN", COST_COSTCAINM_orig * IF_rate["SP"] * US_rate["SP"],                    ifelse(COUNTRY == "US", COST_COSTCAINM_orig * IF_rate["US"] * US_rate["US"],
+ifelse(COUNTRY == "Japan", COST_COSTCAINM_orig * IF_rate["JP"] * US_rate["JP"],
+COST_COSTCAINM_orig))))))),
+
+  COST_COSTCADM = ifelse(COUNTRY == "FRANCE", COST_COSTCADM_orig * IF_rate["FR"] * US_rate["FR"], ifelse(COUNTRY == "GERMANY", COST_COSTCADM_orig * IF_rate["DE"] * US_rate["DE"], 
+ifelse(COUNTRY == "UNITED KINGDOM", COST_COSTCADM_orig * IF_rate["UK"] * US_rate["UK"],                    ifelse(COUNTRY == "ITALY", COST_COSTCADM_orig * IF_rate["IT"] * US_rate["IT"],                    ifelse(COUNTRY == "SPAIN", COST_COSTCADM_orig * IF_rate["SP"] * US_rate["SP"],                    ifelse(COUNTRY == "US", COST_COSTCADM_orig * IF_rate["US"] * US_rate["US"],
+ifelse(COUNTRY == "Japan", COST_COSTCADM_orig * IF_rate["JP"] * US_rate["JP"],
+COST_COSTCADM_orig)))))))
+)
+  
+```
+
+```{r}
+summary(merged_analysis2$COST_COSTCADM == merged_analysis2$COST_COSTCADM_orig)
+
+summary(merged_analysis$COST_COSTCADM == merged_analysis$COST_COSTCADM_orig)
+```
+
+save the cleaned dataset
+```{r}
+merged_analysis <- merged_analysis2
+if (merge_opt == "1"){
+  save(merged_analysis, file = paste0(datadir,"merged_woMCI.RData"))
+}else if (merge_opt == "2") {
+  save(merged_analysis, file = paste0(datadir,"merged_woMCI_plus.RData"))
+}
+```

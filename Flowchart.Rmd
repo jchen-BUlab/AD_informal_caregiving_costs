@@ -1,0 +1,344 @@
+---
+title: "FLowchart: 7 countries"
+output: html_document
+date: "2025-11-03"
+---
+
+#****************************************
+# MIT License
+# Copyright (c) 2026 Jinying Chen
+#  
+# author(s): Jinying Chen, Boston University Chobanian & Avedisian School of Medicine
+# release date: 2026-4-20
+# ver: 1.0
+# 
+# This code was written to support data analysis for the gender differences in AD 
+# costs project and the 2026 paper published in BMC Public Health.
+# The code is for research use only, and is provided as it is.
+# 
+
+```{r}
+#library(Hmisc)
+library(tidyverse)
+library(psych)
+library(dplyr)
+library(table1) #Produced table 1 ready for publication
+library(tidyr)
+```
+
+
+```{r}
+source("notebook_setup.R")
+datadir <- project_dir(c("data", "20251029_7c"), envvar = "ADCOST_DATA_DIR", create = TRUE)
+outdir <- project_dir(c("results", "woMCI_7c_plus_se"), envvar = "ADCOST_RESULTS_DIR", create = TRUE)
+```
+
+load the cleaned dataset
+```{r}
+load(file = paste0(datadir,"merged_woMCI_plus.RData"))
+merged_analysis_core_data <- merged_analysis
+```
+
+
+```{r}
+load(file = paste0(datadir,"EU_flowchart.RData"))
+load(file = paste0(datadir,"US_flowchart.RData"))
+load(file = paste0(datadir,"US_mildAD_flowchart.RData"))
+load(file = paste0(datadir,"JP_flowchart.RData"))
+load(file = paste0(datadir,"SP_flowchart.RData"))
+load(file = paste0(datadir,"IT_flowchart.RData"))
+```
+
+```{r}
+load(file = paste0(datadir,"merged_SE.RData"))
+```
+
+# final dataset
+```{r}
+df_all <- merge(merged_analysis_core_data, merged_se, by = "SUBJID", all.x = T)
+dim(df_all)
+```
+
+
+```{r}
+df_all_us2_mildAD <- df_all_us2 |>
+  filter(!is.na(TRT))
+```
+
+```{r}
+df_eu_compl <- df_all_eu2[complete.cases(df_all_eu2),]
+df_sp_compl <- df_all_sp2[complete.cases(df_all_sp2),]
+df_it_compl <- df_all_it2[complete.cases(df_all_it2),]
+df_us_mildAD_compl <- df_all_us2_mildAD[complete.cases(df_all_us2_mildAD),]
+df_jp_compl <- df_all_jp2[complete.cases(df_all_jp2),]
+```
+
+
+# EU 
+```{r}
+sbj_w_multicgs <- pat_w_multi_cargivers
+```
+
+
+```{r}
+df_all_eu3 <- df_all_eu2 |>
+  filter(! SUBJID %in% sbj_w_multicgs) |>
+  filter(! is.na(COUNTRY))
+```
+
+
+```{r}
+table(df_all_eu3$COUNTRY, useNA = "ifany")
+```
+
+```{r}
+colSums(is.na(df_all_eu3))
+```
+
+```{r}
+df_all_eu3[!complete.cases(df_all_eu3[, c("CG_SEX", "P_AGE", "P_EDUC", "ZBITOTB")]), ]
+```
+
+
+```{r}
+table(df_eu_compl$COUNTRY, useNA = "ifany")
+```
+
+US
+```{r}
+colSums(is.na(df_all_us2_mildAD))
+dim(df_us_mildAD_compl)
+```
+
+```{r}
+colSums(is.na(df_all_jp2))
+dim(df_jp_compl)
+```
+
+```{r}
+colSums(is.na(df_all_sp2))
+dim(df_sp_compl)
+```
+
+```{r}
+colSums(is.na(df_all_it2))
+dim(df_it_compl)
+```
+
+
+# generate merged set with NA's
+
+# recoding EU
+```{r}
+df_all_eu4 <- df_all_eu3 %>% 
+ mutate (P_AGE= ifelse(P_AGE == ">89", "90", P_AGE),
+           P_AGE1= as.numeric(P_AGE),
+           CG_AGE= ifelse(CG_AGE == ">89", "90", CG_AGE),
+           CG_AGE2= as.numeric(CG_AGE),
+          P_AGECAT= as.factor(ifelse(P_AGE1 <65, "1", ifelse(P_AGE1 >= 65 & P_AGE1 <= 74, "2",  ifelse(P_AGE1 >= 75 & P_AGE1 <= 84, "3", "4")))),
+          CG_AGECAT= as.factor(ifelse(CG_AGE2 <65, "1", ifelse(CG_AGE2 >= 65 & CG_AGE2 <= 74, "2",  ifelse(CG_AGE2 >= 75 & CG_AGE2 <= 84, "3", "4")))),
+          P_SEX1= as.factor(ifelse(P_SEX == "Male" , "1", "2")), 
+         CG_SEX1= as.factor(ifelse(CG_SEX== "Male" , "1", "2")), 
+         P_EDUC1= as.factor(ifelse(P_EDUC <= 12, "1", "2")),
+         CG_OTHCG1=as.factor(ifelse(CG_OTHCG==0, "0", ifelse(CG_OTHCG == 1, "1", ifelse(CG_OTHCG == 2, "2", ifelse(CG_OTHCG == 3, "3", "4"))))),
+         SEVGRP= as.factor(SEVGRPCD),
+         CG_LIVEIN1= as.factor (ifelse(CG_LIVEIN == "Yes" , "1", "2")),
+         CG_REL1= as.factor(ifelse(CG_REL %in% c("Husband", "Wife"), 1, ifelse(CG_REL == "Child", 2, 3)))) %>%
+dplyr::select(SUBJID, COUNTRY, P_SEX1, P_AGE1, CG_AGE2,CG_SEX1, CG_LIVEIN1, CG_OTHCG1, CG_REL1, ZBITOTB, COST_COSTCAINM, P_AGECAT, CG_AGECAT, P_EDUC1, MMSETOTB, cmbdts)
+dim(df_all_eu4)
+```
+
+```{r}
+colSums(is.na(df_all_eu4))
+```
+
+# recoding US
+```{r}
+df_all_us3_mildAD <- df_all_us2_mildAD %>% 
+  mutate (P_AGE = ifelse(P_AGE == ">89", "90", P_AGE),
+          P_AGE1=  as.numeric(P_AGE),
+          CG_AGE = ifelse(CG_AGE == ">89", "90", CG_AGE),  
+          CG_AGE1= as.numeric(CG_AGE),
+          P_AGECAT= as.factor(ifelse(P_AGE1 <65, "1", ifelse(P_AGE1 >= 65 & P_AGE1 <= 74, "2",  ifelse(P_AGE1 >= 75 & P_AGE1 <= 84, "3", "4")))),
+          CG_AGECAT= as.factor(ifelse(CG_AGE1 <65, "1", ifelse(CG_AGE1 >= 65 & CG_AGE1 <= 74, "2",  ifelse(CG_AGE1 >= 75 & CG_AGE1 <= 84, "3", "4")))),
+          P_SEX1= as.factor(ifelse(P_SEX == "1" , "1", "2")), 
+         CG_SEX1= as.factor(ifelse(CG_SEX== "1" , "1", "2")), 
+         CG_OTHCG1=as.factor(ifelse(CG_OTHCG==0, "0", ifelse(CG_OTHCG == 1, "1", ifelse(CG_OTHCG == 2, "2", ifelse(CG_OTHCG == 3, "3", "4"))))),
+         CG_LIVEIN1= as.factor (ifelse(CG_LIVEIN == "1" , "1", "2")),
+         #P_EDUC1= as.factor(ifelse(P_EDUC %in% c(1,2,3,4), "1", "2")),
+         P_EDUC1 = as.factor(case_when(
+                    P_EDUC %in% c(1,2,3,4) ~ "1",
+                    P_EDUC > 4 ~ "2",
+                    TRUE ~ NA_character_
+                  )),
+         SEVGRP = case_when(MMSETOTB >=21 ~ 1, MMSETOTB >= 15 & MMSETOTB <= 20 ~ 2, MMSETOTB <= 14 ~ 3),
+         COST_COSTCAINM = round(COST_COSTCAINM, digits = 2),
+         CG_REL1= as.factor(ifelse(CG_REL== 1, 1, ifelse(CG_REL == 3 , 2, 3)))) %>%
+select(SUBJID, COUNTRY,  P_SEX1, P_AGE1, P_AGECAT, P_EDUC1,  CG_AGE1, CG_AGECAT, CG_SEX1, CG_LIVEIN1, CG_OTHCG1, CG_REL1, ZBITOTB, MMSETOTB, COST_COSTCAINM, cmbdts)
+dim(df_all_us3_mildAD)  
+```
+
+```{r}
+df_all_us3_mildAD <- df_all_us3_mildAD %>%
+  rename(CG_AGE2 = CG_AGE1)
+```
+
+
+```{r}
+colSums(is.na(df_all_us2_mildAD))
+colSums(is.na(df_all_us3_mildAD))
+```
+
+
+# recoding JP
+```{r}
+df_all_jp3 <- df_all_jp2 %>%
+  mutate (P_AGE = ifelse(C_AGE == ">89", "90", C_AGE),
+          P_AGE1 = as.numeric(P_AGE),
+          CG_AGE1 = ifelse(C_CGAGE == ">89", "90", C_CGAGE),
+          CG_AGE2 = as.numeric(CG_AGE1),
+          P_AGECAT= as.factor(ifelse(P_AGE1 <65, "1", ifelse(P_AGE1 >= 65 & P_AGE1 <= 74, "2",  ifelse(P_AGE1 >= 75 & P_AGE1 <= 84, "3", "4")))),
+          CG_AGECAT= as.factor(ifelse(CG_AGE2 <65, "1", ifelse(CG_AGE2 >= 65 & CG_AGE2 <= 74, "2",  ifelse(CG_AGE2 >= 75 & CG_AGE2 <= 84, "3", "4")))),
+         P_SEX1= as.factor(ifelse(P_SEX == "0" , "1", "2")), 
+         CG_SEX1= as.factor(ifelse(CG_SEX== "0" , "1", "2")), 
+         CG_OTHCG1=as.factor(ifelse(CG_OTHCG==0, "0", ifelse(CG_OTHCG == 1, "1", ifelse(CG_OTHCG == 2, "2", ifelse(CG_OTHCG == 3, "3", "4"))))),
+         P_CC1=as.factor(ifelse(P_CC==0, "0", ifelse(P_CC == 1, "1", ifelse(P_CC == 2, "2", ifelse(P_CC == 3, "3", "4"))))),
+         CG_LIVEIN1= as.factor (ifelse(CG_LIVEIN == "Y" , "1", "2")),
+         SEVGRP= as.factor(ifelse(SEVGEUCD == 1, "1", ifelse(SEVGEUCD == 2, "2", "3"))),
+         P_EDUC1= as.factor(ifelse(P_EDUC %in% c(1,2), "1", "2")),
+         P_LIVLOC1= as.factor(ifelse(P_LIVLOC == 1, "1", "2")),
+         P_ALONE1= as.factor(ifelse(P_ALONE == 0, "0", "1")),
+         P_MARRIED1= as.factor(ifelse(P_MARRIED == 0, "0", "1")),
+         CG_REL1= as.factor(ifelse(CG_REL == 1, "1", ifelse(CG_REL == 2, "2", "3")))) %>% 
+dplyr::select(SUBJID, COUNTRY, P_SEX1, P_AGE1, P_AGECAT, P_EDUC1, CG_AGE2, CG_AGECAT, CG_SEX1, CG_LIVEIN1, CG_OTHCG1, CG_REL1, COST_COSTCAINM, ZBITOTB, MMSETOTB, cmbdts)
+ 
+  
+dim(df_all_jp3)
+```
+
+```{r}
+colSums(is.na(df_all_jp2))
+colSums(is.na(df_all_jp3))
+```
+```{r}
+summary(df_all_jp3$cmbdts)
+```
+
+# recoding SP
+```{r}
+df_all_sp3 <- df_all_sp2 %>%
+  mutate (P_AGE= ifelse(P_AGE == ">89", "90", P_AGE),
+           P_AGE1= as.numeric(P_AGE),
+           CG_AGE= ifelse(CG_AGE == ">89", "90", CG_AGE),
+           CG_AGE2= as.numeric(CG_AGE),
+          P_AGECAT= as.factor(ifelse(P_AGE1 <65, "1", ifelse(P_AGE1 >= 65 & P_AGE1 <= 74, "2",  ifelse(P_AGE1 >= 75 & P_AGE1 <= 84, "3", "4")))),
+          CG_AGECAT= as.factor(ifelse(CG_AGE2 <65, "1", ifelse(CG_AGE2 >= 65 & CG_AGE2 <= 74, "2",  ifelse(CG_AGE2 >= 75 & CG_AGE2 <= 84, "3", "4")))),
+          P_SEX1= as.factor(ifelse(P_SEX == "Male" , "1", "2")), 
+         CG_SEX1= as.factor(ifelse(CG_SEX== "Male" , "1", "2")), 
+         P_EDUC1= as.factor(ifelse(P_EDUC <= 12, "1", "2")),
+         CG_OTHCG1=as.factor(ifelse(CG_OTHCG==0, "0", ifelse(CG_OTHCG == 1, "1", ifelse(CG_OTHCG == 2, "2", ifelse(CG_OTHCG == 3, "3", "4"))))),
+         SEVGRP= as.factor(SEVGRPCD),
+         CG_LIVEIN1= as.factor (ifelse(CG_LIVEIN == "Yes" , "1", "2")),
+         CG_REL1= as.factor(ifelse(CG_REL %in% c("Husband", "Wife"), 1, ifelse(CG_REL == "Child", 2, 3)))) %>%
+dplyr::select(SUBJID, COUNTRY, P_SEX1, P_AGE1, CG_AGE2,CG_SEX1, CG_LIVEIN1, CG_OTHCG1, CG_REL1, ZBITOTB, COST_COSTCAINM, P_AGECAT, CG_AGECAT, P_EDUC1, MMSETOTB, cmbdts)
+  
+dim(df_all_sp3)
+```
+
+```{r}
+colSums(is.na(df_all_sp2))
+colSums(is.na(df_all_sp3))
+```
+
+# recoding IT
+```{r}
+df_all_it3 <- df_all_it2 %>%
+  mutate (P_AGE = ifelse(P_AGE == ">89", "90", P_AGE),
+          P_AGE1= as.numeric(P_AGE),
+          CG_AGE= ifelse(CG_AGE == ">89", "90", CG_AGE),
+          CG_AGE2= as.numeric(CG_AGE),
+          P_AGECAT= as.factor(ifelse(P_AGE1 <65, "1", ifelse(P_AGE1 >= 65 & P_AGE1 <= 74, "2",  ifelse(P_AGE1 >= 75 & P_AGE1 <= 84, "3", "4")))),
+          CG_AGECAT= as.factor(ifelse(CG_AGE2 <65, "1", ifelse(CG_AGE2 >= 65 & CG_AGE2 <= 74, "2",  ifelse(CG_AGE2 >= 75 & CG_AGE2 <= 84, "3", "4")))),
+          P_SEX1= as.factor(ifelse(P_SEX == "Male" , "1", "2")), 
+         CG_SEX1= as.factor(ifelse(CG_SEX== "Male" , "1", "2")), 
+         P_EDUC1= as.factor(ifelse(P_EDUC <= 12, "1", "2")),
+         CG_OTHCG1=as.factor(ifelse(CG_OTHCG==0, "0", ifelse(CG_OTHCG == 1, "1", ifelse(CG_OTHCG == 2, "2", ifelse(CG_OTHCG == 3, "3", "4"))))),
+         SEVGRP= as.factor(SEVGRPCD),
+         CG_LIVEIN1= as.factor (ifelse(CG_LIVEIN == "Yes" , "1", "2")),
+         CG_REL1= as.factor(ifelse(CG_REL %in% c("Husband", "Wife"), 1, ifelse(CG_REL == "Child", 2, 3)))) %>%
+dplyr::select(SUBJID, COUNTRY, P_SEX1, P_AGE1, CG_AGE2,CG_SEX1, CG_LIVEIN1, CG_OTHCG1, CG_REL1, ZBITOTB, COST_COSTCAINM, P_AGECAT, CG_AGECAT, P_EDUC1, MMSETOTB, cmbdts)
+
+dim(df_all_it3)
+```
+
+```{r}
+colSums(is.na(df_all_it2))
+colSums(is.na(df_all_it3))
+```
+
+
+
+```{r}
+df_list <- list(df_all_eu4, df_all_it3, df_all_sp3, df_all_jp3, df_all_us3_mildAD)
+
+df_list_fixed <- lapply(df_list, function(x) {
+  x$SUBJID <- as.character(x$SUBJID)
+  x
+})
+
+df_combined <- dplyr::bind_rows(df_list_fixed)
+```
+
+
+
+# currency
+# Currencies for US and Japan are in USD. The currencies for Spain, Italy and GERAS-EU are available in Euro. We converted the currency Euroes to USD for Spain and Italy datasets to merge all four datasets effectively. 
+
+# dollar conversion
+```{r}
+# index year 2020
+IF_rate <- c(
+# inflation factor for USA:
+1.0596063,
+# inflation factor for JPN: 
+1.0144817,
+# inflation factor for ESP: 
+1.0303351,
+# inflation factor for ITA: 
+1.0293441,
+# inflation factor for FRA: 
+1.0005241,
+# inflation factor for DEU: 
+.99505091,
+# inflation factor for GBR: 
+1.008787
+)
+
+names(IF_rate) <- c("US", "JP", "SP", "IT", "FR", "DE", "UK")
+
+US_rate <- c(1, 1, 1.14, 1.14, 1.14, 1.14, 1.14)
+
+names(US_rate) <- c("US", "JP", "SP", "IT", "FR", "DE", "UK")
+
+```
+
+# convert to US dollar in 2020
+```{r}
+df_combined$COST_COSTCAINM_orig <- df_combined$COST_COSTCAINM
+```
+
+
+```{r}
+df_combined2 <- df_combined %>% 
+  mutate(COST_COSTCAINM = ifelse(COUNTRY == "FRANCE", COST_COSTCAINM_orig * IF_rate["FR"] * US_rate["FR"], ifelse(COUNTRY == "GERMANY", COST_COSTCAINM_orig * IF_rate["DE"] * US_rate["DE"], 
+ifelse(COUNTRY == "UNITED KINGDOM", COST_COSTCAINM_orig * IF_rate["UK"] * US_rate["UK"],                    ifelse(COUNTRY == "ITALY", COST_COSTCAINM_orig * IF_rate["IT"] * US_rate["IT"],                    ifelse(COUNTRY == "SPAIN", COST_COSTCAINM_orig * IF_rate["SP"] * US_rate["SP"],                    ifelse(COUNTRY == "US", COST_COSTCAINM_orig * IF_rate["US"] * US_rate["US"],
+ifelse(COUNTRY == "Japan", COST_COSTCAINM_orig * IF_rate["JP"] * US_rate["JP"],
+COST_COSTCAINM_orig))))))))
+  
+```
+
+
+
+```{r}
+save(df_combined2, file = paste0(datadir,"df_all_w_NAs.RData"))
+```
