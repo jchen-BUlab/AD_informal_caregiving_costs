@@ -1,0 +1,1536 @@
+---
+title: "Analysis on merged_woMCI socioeconomic: 7 countries"
+output: html_document
+date: "2025-10-28"
+---
+
+#****************************************
+# MIT License
+# Copyright (c) 2026 Jinying Chen
+#  
+# author(s): Jinying Chen, Boston University Chobanian & Avedisian School of Medicine
+# release date: 2026-4-20
+# ver: 1.0
+# 
+# This code was written to support data analysis for the gender differences in AD 
+# costs project and the 2026 paper published in BMC Public Health.
+# The code is for research use only, and is provided as it is.
+# 
+
+```{r}
+#library(Hmisc)
+library(tidyverse)
+library(psych)
+library(dplyr)
+library(table1) #Produced table 1 ready for publication
+library(tidyr)
+```
+
+```{r}
+source("notebook_setup.R")
+datadir <- project_dir(c("data", "20251029_7c"), envvar = "ADCOST_DATA_DIR", create = TRUE)
+outdir <- project_dir(c("results", "woMCI_7c_plus_se"), envvar = "ADCOST_RESULTS_DIR", create = TRUE)
+outdir_orig <- outdir
+```
+
+load the cleaned core dataset
+```{r}
+load(file = paste0(datadir,"merged_woMCI_plus.RData"))
+merged_analysis_core_data <- merged_analysis
+```
+
+load SES variables
+```{r}
+df3_us <- read_csv(paste0(datadir, "df3_us.csv"), show_col_types = FALSE)
+df3_eu <- read_csv(paste0(datadir, "df3_eu.csv"), show_col_types = FALSE)
+df3_jp <- read_csv(paste0(datadir, "df3_jp.csv"), show_col_types = FALSE)
+df3_ii <- read_csv(paste0(datadir, "df3_ii.csv"), show_col_types = FALSE)
+```
+
+
+```{r}
+long_to_wide <- function(df, id_col, name_col, value_cols) {
+  df2 <- df %>%
+    pivot_wider(
+      id_cols = all_of(id_col),
+      names_from = all_of(name_col),
+      values_from = all_of(value_cols),
+      names_sep = "_"
+    )
+  return(df2)
+}
+
+```
+
+```{r}
+se_us <- long_to_wide(df3_us, c("SUBJID", "RUDD"), name_col = "RUDQSNUM", value_cols = "RUDRC")
+se_eu <- long_to_wide(df3_eu, c("SUBJID", "RUDD"), name_col = "RUDQSNUM", value_cols = "RUDRC")
+se_ii <- long_to_wide(df3_ii, c("SUBJID", "RUDD"), name_col = "RUDQSNUM", value_cols = "RUDRC")
+```
+
+```{r}
+se_us2 <- se_us %>%
+  filter(RUDD == "Do you currently work for pay?") %>%
+  rename(
+    WORKYN = RUDRES10
+  ) %>%
+  select(SUBJID, WORKYN)
+
+
+se_eu2 <- se_eu %>%
+  filter(RUDD == "Do you currently work for pay?") %>%
+  rename(
+    WORKYN = RUDRES10
+  ) %>%
+  select(SUBJID, WORKYN)
+
+se_ii2 <- se_ii %>%
+  filter(RUDD == "Do you currently work for pay?") %>%
+  rename(
+    WORKYN = RUDRES10
+  ) %>%
+  select(SUBJID, WORKYN)
+```
+
+```{r}
+se_jp2 <- df3_jp %>%
+  select(SUBJID, WORKYN)
+```
+
+```{r}
+merged_se <- rbind(se_jp2, se_us2, se_ii2, se_eu2)
+
+merged_se$WORKYN <- ifelse(
+  merged_se$WORKYN %in% c("Yes", "Y"), "Y",
+  ifelse(merged_se$WORKYN %in% c("No", "N"), "N", merged_se$WORKYN)
+)
+
+merged_se$WORKYN <- as.factor(merged_se$WORKYN)
+
+```
+
+save the merged SE dataset
+```{r}
+save(merged_se, file = paste0(datadir,"merged_SE.RData"))
+```
+
+create the merged dataset with SES variable
+```{r}
+df_all <- merge(merged_analysis_core_data, merged_se, by = "SUBJID", all.x = T)
+```
+
+```{r}
+table(df_all$WORKYN, useNA = "always")
+```
+
+```{r}
+merged_analysis <- df_all
+merged_analysis$WORKYN <- relevel(merged_analysis$WORKYN, ref = "N")
+```
+
+save the merged dataset
+```{r}
+save(df_all, file = paste0(datadir,"merged_core_SE.RData"))
+```
+
+# Table 1
+## Estimate Table 1 statistics
+## Add function to calculate p-value for Table1
+
+
+```{r}
+pvalue <- function(x, ...) {
+  
+    # Construct vectors of data y, and groups (strata) g
+    # Subset to two columns to ensure estimates do not include "Overall" for comp
+    #
+    x2 <- x[c(1,2)]
+    y <- unlist(x2)
+    g <- factor(rep(1:length(x2), times=sapply(x2, length)))
+    
+    if (is.numeric(y)) {
+      
+        # For numeric variables, perform a standard 2-sample t-test
+        #p <- anova(lm(y ~ g))$Pr[1]
+        p <- t.test(y ~ g)$p.value
+    } else {
+      
+        # For categorical variables, perform a chi-squared test of independence
+        #p <- suppressWarnings(chisq.test(table(y, g))$p.value)
+        #print(table(y,g))
+        tabl <- table(y, g)
+        if (any(tabl < 5)) {
+          p <- fisher.test(tabl)$p.value
+        }else{
+          p <- chisq.test(tabl)$p.value  
+        }
+        
+    }
+    # Format the p-value, using an HTML entity for the less-than sign.
+    # The initial empty string places the output on the line below the variable label.
+    
+    c("", sub("<", "&lt;", format.pval(p, digits=3, eps=0.001)))
+}
+```
+
+
+```{r}
+merged_analysis$COST_COSTCAINM_bi <- as.factor(ifelse(merged_analysis$COST_COSTCAINM == 0, "no cost", "cost > 0"))
+
+table(merged_analysis$CG_SEX1)
+prop.table(table(merged_analysis$CG_SEX1))
+```
+
+## Table 1, All Covariates
+```{r}
+t1 <- table1(~  P_SEX1 + P_AGECAT + P_EDUC1 + cmbdts  + MMSETOTB + CG_AGECAT + CG_LIVEIN1  + CG_REL1 + CG_OTHCG1 + WORKYN + COUNTRY + COST_COSTCAINM + ZBITOTB  + COST_COSTCAINM_bi | CG_SEX1, data=merged_analysis, extra.col = list('P-value'=pvalue), render.continuous = function(x) {
+    table1::render.continuous.default(x, digits = 4)
+  })
+
+t1
+```
+
+
+```{r}
+# Save the table1 output as HTML
+html_file <- paste0(outdir, "table1_merged.html")
+
+# Use htmltools to save the HTML content
+htmltools::save_html(t1, file = html_file)
+
+print(paste("Table saved to:", html_file))
+```
+
+
+```{r}
+df_outcome <- describeBy(merged_analysis[, c("MMSETOTB", "COST_COSTCAINM", "ZBITOTB")],  merged_analysis$CG_SEX1, mat = TRUE)
+
+df_outcome
+```
+
+
+
+```{r}
+# File path
+output_file <- paste0(outdir, "/", "outcomes_merged.csv")
+
+# Save the data frame to a CSV file
+write.csv(df_outcome, file = output_file, row.names = TRUE)
+
+print(paste("outcome statistics saved to:", output_file))
+
+```
+
+
+# check distribution of outcomes
+```{r}
+hist(merged_analysis$COST_COSTCAINM,
+     main = "Histogram of Informal care costs",
+     xlab = "Caregiver Informal Care Costs",
+     col = "skyblue",
+     border = "black",
+     breaks = 50  
+)
+```
+
+# We see that the distribution is not normal and there are a number of zero data points in our data.
+# Running linear regression and gamma regression would not be effective in this case. Therefore, we run two-part model to test the association.
+
+```{r}
+hist(merged_analysis$ZBITOTB,
+     main = "Histogram of ZBI total score",
+     xlab = "ZBI total score",
+     col = "skyblue",
+     border = "black",
+     breaks = 50  
+)
+```
+
+
+# Checking for multicollinearity
+
+```{r}
+m1 <- lm(ZBITOTB ~ CG_SEX1 + P_AGE1  + P_SEX1 + CG_AGE2 + CG_LIVEIN1  + CG_REL1 + CG_OTHCG1 + MMSETOTB + COUNTRY + cmbdts + WORKYN, data = merged_analysis)
+summary(m1)
+DescTools :: VIF(m1)
+```
+
+# All aVIF values < 2
+
+
+```{r}
+merged_analysis$COUNTRY <- relevel(merged_analysis$COUNTRY, ref = "FRANCE")
+
+levels(merged_analysis$COUNTRY)
+```
+
+
+#Next few chunks were used to generate Tables 2 & 3
+
+```{r}
+#install.packages("twopartm")
+library(twopartm)
+library(DescTools)
+```
+
+
+```{r}
+library(broom)
+run_lm <- function(model_name, outcome, predictor, covariates, data, outdir) {
+  # Combine predictor and covariates into a formula string
+  formula_str <- paste(outcome, " ~ ", paste(c(predictor, covariates), collapse = " + "))
+  
+  # Convert to formula object
+  formula_obj <- as.formula(formula_str)
+  
+  # Fit linear model
+  model <- lm(formula_obj, data = data)
+  
+  summary_output <- summary(model)
+  conf <- confint(model, level = 0.95)
+  
+  df_ame <- tidy(model, conf.int = TRUE)
+  
+  
+  # File path
+  output_file1 <- paste0(outdir, "/", model_name, "_summary.txt")
+
+  # Capture the model summary and save it to a file
+  
+  # Save the summary to a text file
+  capture.output(cat("Model Summary:\n"), summary_output, file = output_file1)
+  
+  # Append confidence intervals with header
+  capture.output(cat("\nConfidence Intervals:\n"), conf, file = output_file1, append = TRUE)
+  
+  print(paste("Model summary saved to:", output_file1))
+  
+  print(summary_output)
+  
+  print(conf)
+  
+  output_file2 <- paste0(outdir, "/", model_name, "_ame.csv")
+  
+  # Save the data frame to a CSV file
+  write.csv(df_ame, file = output_file2, row.names = FALSE)
+  
+  return(model)
+}
+
+```
+
+
+```{r}
+run_twopart <- function(model_name, outcome, predictor, covariates, data, outdir)
+{
+  # Combine predictor and covariates into a formula string
+  formula_str <- paste(outcome, " ~ ", paste(c(predictor, covariates), collapse = " + "))
+  
+  # Convert to formula object
+  formula_obj <- as.formula(formula_str)
+  
+  # Fit linear model
+  model <- tpm(formula_part1 = formula_obj, formula_part2 = formula_obj, data = data, link_part1 = "logit", family_part2 = Gamma(link = "log"))
+  
+  # Capture the model summary and save it to a file
+  summary_output <- summary(model)
+
+  # File path
+  output_file <- paste0(outdir, "/", model_name, "_summary.txt")
+  
+  # Save the summary to a text file
+  capture.output(summary_output, file = output_file)
+  
+  print(paste("Model summary saved to:", output_file))
+
+  df_ame <- AME(model)
+  
+  # File path
+  output_file <- paste0(outdir, "/", model_name, "_ame.csv")
+  
+  # Save the data frame to a CSV file
+  write.csv(df_ame, file = output_file, row.names = FALSE)
+  
+  print(paste("Model summary saved to:", output_file))
+  
+  print(summary_output)
+  print(df_ame)
+
+  return(model)
+}
+```
+
+```{r}
+run_loglik_ratio_test <- function(reduced_model, full_model, reduced_model_name, full_model_name) {
+  reduced_loglik <- logLik(reduced_model)
+  full_loglik <- logLik(full_model)
+
+  lr_statistic <- 2 * (as.numeric(full_loglik) - as.numeric(reduced_loglik))
+  df_diff <- attr(full_loglik, "df") - attr(reduced_loglik, "df")
+  p_value <- pchisq(lr_statistic, df = df_diff, lower.tail = FALSE)
+
+  data.frame(
+    reduced_model = reduced_model_name,
+    full_model = full_model_name,
+    logLik_reduced = as.numeric(reduced_loglik),
+    logLik_full = as.numeric(full_loglik),
+    df_reduced = attr(reduced_loglik, "df"),
+    df_full = attr(full_loglik, "df"),
+    df_diff = df_diff,
+    LR_statistic = lr_statistic,
+    p_value = p_value
+  )
+}
+```
+
+
+# Primary analysis
+```{r}
+ncovs <- c()
+covs_primary <- c("P_AGE1", "P_SEX1", "CG_AGE2", "CG_LIVEIN1", "CG_REL1", "CG_OTHCG1", "MMSETOTB", "COUNTRY", "cmbdts", "WORKYN")
+```
+
+#Caregiver Informal Care costs
+
+#Unadjusted model
+```{r}
+model_name <- "tpm_unadj_cinm_merged"
+cinm_unadj_model <- run_twopart(model_name, "COST_COSTCAINM", "CG_SEX1", ncovs, merged_analysis, outdir)
+```
+
+
+#Adjusted model
+
+```{r}
+model_name <- "tpm_adj_cinm_merged"
+cinm_adj_full_model <- run_twopart(model_name, "COST_COSTCAINM", "CG_SEX1", covs_primary, merged_analysis, outdir)
+```
+
+# ZBI
+# unadjusted
+```{r}
+model_name <- "lm_unadj_zbi_merged"
+zbi_unadj_model <- run_lm(model_name, "ZBITOTB", "CG_SEX1", ncovs, merged_analysis, outdir)
+```
+
+# adjusted
+```{r}
+model_name <- "lm_adj_zbi_merged"
+zbi_adj_full_model <- run_lm(model_name, "ZBITOTB", "CG_SEX1", covs_primary, merged_analysis, outdir)
+```
+
+
+# Secondary analysis
+```{r}
+outdir <- project_dir(c("results", "woMCI_7c_plus_se", "secondary"), create = TRUE)
+```
+
+```{r}
+run_stratification_analysis <- function(str_var, str_value, model_prefix, covs, data, outdir) {
+  ncovs <- c()
+  
+  df0 <- data %>% filter(.data[[str_var]] == str_value)
+  
+  # Set COUNTRY levels to match full dataset
+  df0$COUNTRY <- droplevels(df0$COUNTRY)
+
+  #Caregiver Informal Care costs
+  
+  #Unadjusted model
+  model_name <- paste0("tpm_unadj_cinm_merged", model_prefix)
+  run_twopart(model_name, "COST_COSTCAINM", "CG_SEX1", ncovs, df0, outdir)
+  
+  #Adjusted model
+  
+  model_name <- paste0("tpm_adj_cinm_merged", model_prefix)
+  run_twopart(model_name, "COST_COSTCAINM", "CG_SEX1", covs, df0, outdir)
+  
+  # ZBI
+  # unadjusted
+  model_name <- paste0("lm_unadj_zbi_merged", model_prefix)
+  run_lm(model_name, "ZBITOTB", "CG_SEX1", ncovs, df0, outdir)
+  
+  # adjusted
+  model_name <- paste0("lm_adj_zbi_merged", model_prefix)
+  run_lm(model_name, "ZBITOTB", "CG_SEX1", covs, df0, outdir)
+}
+```
+
+
+# secondary analysis 1 -- stratify by work status
+```{r}
+run_stratification_analysis(str_var = "WORKYN", str_value = "Y", model_prefix = "_s1_wk", covs = setdiff(covs_primary, c("WORKYN")), merged_analysis, outdir)
+```
+
+```{r}
+run_stratification_analysis(str_var = "WORKYN", str_value = "N", model_prefix = "_s1_nowk", covs = setdiff(covs_primary, c("WORKYN")), merged_analysis, outdir)
+```
+
+
+
+# secondary analysis 2 - stratify by severity
+EU: Patients were stratified according to disease severity at baseline using MMSE criteria consistent with
+UK clinical guidelines [23]: 
+‘Mild AD severity’ (MMSE 21−26 points); 
+‘Moderate AD severity’ (MMSE 15−20 points); 
+‘Moderately severe/severe AD severity’ (MMSE <15 points).
+
+JP: Patients were classified into three groups (mild,
+moderate, moderately severe/severe) based on the
+AD severity at baseline using MMSE [24] criteria
+consistent with the GERAS-I and United Kingdom
+(UK) National Institute for Health and Care Excellence
+(NICE) guidelines: mild, MMSE 21–26 points;
+moderate, MMSE 15–20 points; and moderately
+severe/severe, MMSE≤14 points [20, 25].
+
+SPAIN/ITALY: Patients and caregivers were stratified into
+three groups according to patient AD dementia
+severity at baseline: mild (MMSE score 21–26),
+moderate (MMSE score 15–20), and moderately
+severe/severe (MS/S) AD dementia (MMSE
+score <15).
+
+US: During stage 2, uniform diagnostic criteria were
+applied to classify patients as either MCI (Mini-
+Mental State Examination [MMSE] score of 24 to 30
+and a Functional Activities Questionnaire [FAQ] <6)
+or MILD (mild dementia, MMSE score of 20 to 30 and an
+FAQ >=6) [12].
+
+```{r}
+merged_analysis %>%
+  group_by(COUNTRY) %>%
+  summarise(
+    count = n(),
+    missing = sum(is.na(MMSETOTB)),
+    mean = mean(MMSETOTB, na.rm = TRUE),
+    sd = sd(MMSETOTB, na.rm = TRUE),
+    min = min(MMSETOTB, na.rm = TRUE),
+    max = max(MMSETOTB, na.rm = TRUE)
+  )
+```
+
+```{r}
+df <- merged_analysis %>%
+  mutate(ADseverity = case_when(
+    MMSETOTB >= 21 & MMSETOTB <= 26 ~ "Mild",
+    MMSETOTB >= 15 & MMSETOTB <= 20 ~ "Moderate",
+    MMSETOTB < 15 ~ "Moderately severe/severe",
+    TRUE ~ NA_character_  # handles missing or out-of-range values
+  ))
+
+table(df$ADseverity, df$COUNTRY, useNA = "ifany")
+
+df$ADseverity <- ifelse(df$COUNTRY == "US", "Mild", df$ADseverity)
+table(df$ADseverity, df$COUNTRY, useNA = "ifany")
+```
+
+
+
+```{r}
+run_stratification_analysis(str_var = "ADseverity", str_value = "Mild", model_prefix = "_s2_mild", covs = covs_primary, df, outdir)
+```
+
+```{r}
+run_stratification_analysis(str_var = "ADseverity", str_value = "Mild", model_prefix = "_s2_mild_woUS", covs = covs_primary, df[df$COUNTRY != "US", ], outdir)
+```
+
+```{r}
+run_stratification_analysis(str_var = "ADseverity", str_value = "Moderate", model_prefix = "_s2_moderate", covs = covs_primary, df, outdir)
+```
+
+```{r}
+run_stratification_analysis(str_var = "ADseverity", str_value = "Moderately severe/severe", model_prefix = "_s2_severe", covs = covs_primary, df, outdir)
+```
+
+# COUNTRY-specific analysis
+
+```{r}
+table(df$COUNTRY)
+```
+
+```{r}
+covs <- setdiff(covs_primary, c("COUNTRY"))
+```
+
+#Checking for Multicollineairty using VIF values
+```{r}
+m1 <- lm(ZBITOTB ~ CG_SEX1 + P_SEX1 + P_AGE1 + CG_AGE2+ CG_REL1 + CG_OTHCG1 + CG_LIVEIN1 + MMSETOTB + cmbdts + WORKYN, data = df[df$COUNTRY == "UNITED KINGDOM", ])
+
+DescTools::VIF(m1)
+
+covs_uk <- setdiff(covs, c("CG_AGE2", "CG_REL1"))
+
+```
+
+```{r}
+run_stratification_analysis(str_var = "COUNTRY", str_value = "UNITED KINGDOM", model_prefix = "_s3_UK2", covs = covs_uk, df, outdir)
+```
+
+#Checking for Multicollineairty using VIF values
+```{r}
+m1 <- lm(ZBITOTB ~ CG_SEX1 + P_SEX1 + P_AGE1 + CG_AGE2+ CG_REL1 + CG_OTHCG1 + CG_LIVEIN1 + MMSETOTB + cmbdts + WORKYN, data = df[df$COUNTRY == "GERMANY", ])
+
+DescTools::VIF(m1)
+
+covs_de <- setdiff(covs, c("CG_AGE2"))
+```
+
+```{r}
+run_stratification_analysis(str_var = "COUNTRY", str_value = "GERMANY", model_prefix = "_s3_DE2", covs = covs_de, df, outdir)
+```
+
+#Checking for Multicollineairty using VIF values
+```{r}
+m1 <- lm(ZBITOTB ~ CG_SEX1 + P_SEX1 + P_AGE1 + CG_AGE2+ CG_REL1 + CG_OTHCG1 + CG_LIVEIN1 + MMSETOTB + cmbdts + WORKYN, data = df[df$COUNTRY == "FRANCE", ])
+
+DescTools::VIF(m1)
+
+covs_fr <- setdiff(covs, c("CG_AGE2"))
+```
+
+```{r}
+run_stratification_analysis(str_var = "COUNTRY", str_value = "FRANCE", model_prefix = "_s3_FR2", covs = covs_fr, df, outdir)
+```
+
+
+#Checking for Multicollineairty using VIF values
+```{r}
+m1 <- lm(ZBITOTB ~ CG_SEX1 + P_SEX1 + P_AGE1 + CG_AGE2+ CG_REL1 + CG_OTHCG1 + CG_LIVEIN1 + MMSETOTB + cmbdts + WORKYN, data = df[df$COUNTRY == "SPAIN", ])
+
+DescTools::VIF(m1)
+
+covs_sp <- setdiff(covs, c("CG_AGE2"))
+```
+
+```{r}
+run_stratification_analysis(str_var = "COUNTRY", str_value = "SPAIN", model_prefix = "_s3_SP2", covs = covs_sp, df, outdir)
+```
+
+#Checking for Multicollineairty using VIF values
+```{r}
+m1 <- lm(ZBITOTB ~ CG_SEX1 + P_SEX1 + P_AGE1 + CG_AGE2+ CG_REL1 + CG_OTHCG1 + CG_LIVEIN1 + MMSETOTB + cmbdts + WORKYN, data = df[df$COUNTRY == "ITALY", ])
+
+DescTools::VIF(m1)
+```
+
+```{r}
+run_stratification_analysis(str_var = "COUNTRY", str_value = "ITALY", model_prefix = "_s3_IT1", covs = covs, df, outdir)
+```
+
+#Checking for Multicollineairty using VIF values
+```{r}
+m1 <- lm(ZBITOTB ~ CG_SEX1 + P_SEX1 + P_AGE1 + CG_AGE2+ CG_REL1 + CG_OTHCG1 + CG_LIVEIN1 + MMSETOTB + cmbdts + WORKYN, data = df[df$COUNTRY == "US", ])
+
+DescTools::VIF(m1)
+
+```
+
+```{r}
+run_stratification_analysis(str_var = "COUNTRY", str_value = "US", model_prefix = "_s3_US1", covs = covs, df, outdir)
+```
+
+#Checking for Multicollineairty using VIF values
+```{r}
+m1 <- lm(ZBITOTB ~ CG_SEX1 + P_SEX1 + P_AGE1 + CG_AGE2+ CG_REL1 + CG_OTHCG1 + CG_LIVEIN1 + MMSETOTB + cmbdts + WORKYN, data = df[df$COUNTRY == "Japan", ])
+
+DescTools::VIF(m1)
+
+covs_jp <- setdiff(covs, c("CG_AGE2"))
+```
+
+```{r}
+run_stratification_analysis(str_var = "COUNTRY", str_value = "Japan", model_prefix = "_s3_JP2", covs = covs_jp, df, outdir)
+```
+
+# end of secondary analysis
+
+
+# Appendix 4: sensitivity analysis -- test interaction 
+```{r}
+outdir <- project_dir(c("results", "woMCI_7c_plus_se", "sensitB_int"), create = TRUE)
+```
+
+
+# gender x AD severity
+```{r}
+merged_analysis <- df
+merged_analysis$CG_SEX1 <- factor(merged_analysis$CG_SEX1)
+merged_analysis$ADseverity <- factor(merged_analysis$ADseverity, levels = c("Mild", "Moderate", "Moderately severe/severe"))
+merged_analysis$WORKYN <- factor(merged_analysis$WORKYN, levels = c("N", "Y"))
+merged_analysis$COUNTRY <- relevel(factor(merged_analysis$COUNTRY), ref = "FRANCE")
+
+add_cgsex_interactions <- function(data, modifier, ref_level, prefix, level_labels = NULL) {
+  data[[modifier]] <- relevel(factor(data[[modifier]]), ref = ref_level)
+  female_cg <- ifelse(is.na(data$CG_SEX1), NA_real_, ifelse(as.character(data$CG_SEX1) %in% c("2", "Female"), 1, 0))
+  modifier_value <- as.character(data[[modifier]])
+  interaction_vars <- character()
+
+  for (level in setdiff(levels(data[[modifier]]), ref_level)) {
+    label <- if (!is.null(level_labels) && level %in% names(level_labels)) level_labels[[level]] else level
+    var_name <- paste0(prefix, "_", gsub("[^A-Za-z0-9]+", "_", label))
+    var_name <- gsub("_$", "", var_name)
+
+    data[[var_name]] <- ifelse(
+      is.na(female_cg) | is.na(modifier_value),
+      NA_real_,
+      female_cg * as.numeric(modifier_value == level)
+    )
+
+    interaction_vars <- c(interaction_vars, var_name)
+  }
+
+  list(data = data, interaction_vars = interaction_vars)
+}
+
+covs_s1 <- setdiff(covs_primary, c("MMSETOTB"))
+main_s1_tpm <- c("CG_SEX1", "ADseverity")
+main_s1_lm <- c("CG_SEX1", "ADseverity")
+int_s1_lm <- c("CG_SEX1", "ADseverity", "CG_SEX1:ADseverity")
+
+s1_interactions <- add_cgsex_interactions(
+  merged_analysis,
+  modifier = "ADseverity",
+  ref_level = "Mild",
+  prefix = "INT_CGSEX1_ADseverity",
+  level_labels = c("Moderately severe/severe" = "Severe")
+)
+merged_analysis <- s1_interactions$data
+int_s1_tpm <- c("CG_SEX1", "ADseverity", s1_interactions$interaction_vars)
+s1_interactions$interaction_vars
+```
+
+
+# informal care cost
+```{r}
+model_name <- "tpm_adj_cinm_merged_s1_adseverity_main"
+cinm_main_adseverity_model <- run_twopart(model_name, "COST_COSTCAINM", main_s1_tpm, covs_s1, merged_analysis, outdir)
+
+model_name <- "tpm_adj_cinm_merged_s1_adseverity"
+cinm_adj_interaction_adseverity_model <- run_twopart(model_name, "COST_COSTCAINM", int_s1_tpm, covs_s1, merged_analysis, outdir)
+
+cinm_lrt_adseverity <- run_loglik_ratio_test(
+  cinm_main_adseverity_model,
+  cinm_adj_interaction_adseverity_model,
+  "tpm_adj_cinm_merged_s1_adseverity_main",
+  "tpm_adj_cinm_merged_s1_adseverity"
+)
+cinm_lrt_adseverity
+```
+
+# ZBI
+```{r}
+model_name <- "lm_adj_zbi_merged_s1_adseverity_main"
+zbi_main_adseverity_model <- run_lm(model_name, "ZBITOTB", main_s1_lm, covs_s1, merged_analysis, outdir)
+
+model_name <- "lm_adj_zbi_merged_s1_adseverity"
+zbi_adj_interaction_adseverity_model <- run_lm(model_name, "ZBITOTB", int_s1_lm, covs_s1, merged_analysis, outdir)
+
+zbi_lrt_adseverity <- run_loglik_ratio_test(
+  zbi_main_adseverity_model,
+  zbi_adj_interaction_adseverity_model,
+  "lm_adj_zbi_merged_s1_adseverity_main",
+  "lm_adj_zbi_merged_s1_adseverity"
+)
+zbi_lrt_adseverity
+```
+
+
+# gender x employment
+```{r}
+covs_s2 <- setdiff(covs_primary, c("WORKYN"))
+main_s2_tpm <- c("CG_SEX1", "WORKYN")
+main_s2_lm <- c("CG_SEX1", "WORKYN")
+int_s2_lm <- c("CG_SEX1", "WORKYN", "CG_SEX1:WORKYN")
+
+s2_interactions <- add_cgsex_interactions(
+  merged_analysis,
+  modifier = "WORKYN",
+  ref_level = "N",
+  prefix = "INT_CGSEX1_WORKYN",
+  level_labels = c("Y" = "HavingPaidWork")
+)
+merged_analysis <- s2_interactions$data
+int_s2_tpm <- c("CG_SEX1", "WORKYN", s2_interactions$interaction_vars)
+s2_interactions$interaction_vars
+```
+
+
+# informal care cost
+```{r}
+model_name <- "tpm_adj_cinm_merged_s2_workyn_main"
+cinm_main_workyn_model <- run_twopart(model_name, "COST_COSTCAINM", main_s2_tpm, covs_s2, merged_analysis, outdir)
+
+model_name <- "tpm_adj_cinm_merged_s2_workyn"
+cinm_adj_interaction_workyn_model <- run_twopart(model_name, "COST_COSTCAINM", int_s2_tpm, covs_s2, merged_analysis, outdir)
+
+cinm_lrt_workyn <- run_loglik_ratio_test(
+  cinm_main_workyn_model,
+  cinm_adj_interaction_workyn_model,
+  "tpm_adj_cinm_merged_s2_workyn_main",
+  "tpm_adj_cinm_merged_s2_workyn"
+)
+cinm_lrt_workyn
+```
+
+# ZBI
+```{r}
+model_name <- "lm_adj_zbi_merged_s2_workyn_main"
+zbi_main_workyn_model <- run_lm(model_name, "ZBITOTB", main_s2_lm, covs_s2, merged_analysis, outdir)
+
+model_name <- "lm_adj_zbi_merged_s2_workyn"
+zbi_adj_interaction_workyn_model <- run_lm(model_name, "ZBITOTB", int_s2_lm, covs_s2, merged_analysis, outdir)
+
+zbi_lrt_workyn <- run_loglik_ratio_test(
+  zbi_main_workyn_model,
+  zbi_adj_interaction_workyn_model,
+  "lm_adj_zbi_merged_s2_workyn_main",
+  "lm_adj_zbi_merged_s2_workyn"
+)
+zbi_lrt_workyn
+```
+
+# gender x country
+
+```{r}
+covs_s3 <- setdiff(covs_primary, c("COUNTRY"))
+main_s3_tpm <- c("CG_SEX1", "COUNTRY")
+main_s3_lm <- c("CG_SEX1", "COUNTRY")
+int_s3_lm <- c("CG_SEX1", "COUNTRY", "CG_SEX1:COUNTRY")
+
+s3_interactions <- add_cgsex_interactions(
+  merged_analysis,
+  modifier = "COUNTRY",
+  ref_level = "FRANCE",
+  prefix = "INT_CGSEX1_COUNTRY",
+  level_labels = c("UNITED KINGDOM" = "UK", "US" = "US", "Japan" = "Japan")
+)
+merged_analysis <- s3_interactions$data
+int_s3_tpm <- c("CG_SEX1", "COUNTRY", s3_interactions$interaction_vars)
+s3_interactions$interaction_vars
+```
+
+
+# informal care cost
+```{r}
+model_name <- "tpm_adj_cinm_merged_s3_country_main"
+cinm_main_country_model <- run_twopart(model_name, "COST_COSTCAINM", main_s3_tpm, covs_s3, merged_analysis, outdir)
+
+model_name <- "tpm_adj_cinm_merged_s3_country"
+cinm_adj_interaction_country_model <- run_twopart(model_name, "COST_COSTCAINM", int_s3_tpm, covs_s3, merged_analysis, outdir)
+
+cinm_lrt_country <- run_loglik_ratio_test(
+  cinm_main_country_model,
+  cinm_adj_interaction_country_model,
+  "tpm_adj_cinm_merged_s3_country_main",
+  "tpm_adj_cinm_merged_s3_country"
+)
+cinm_lrt_country
+```
+
+# ZBI
+```{r}
+model_name <- "lm_adj_zbi_merged_s3_country_main"
+zbi_main_country_model <- run_lm(model_name, "ZBITOTB", main_s3_lm, covs_s3, merged_analysis, outdir)
+
+model_name <- "lm_adj_zbi_merged_s3_country"
+zbi_adj_interaction_country_model <- run_lm(model_name, "ZBITOTB", int_s3_lm, covs_s3, merged_analysis, outdir)
+
+zbi_lrt_country <- run_loglik_ratio_test(
+  zbi_main_country_model,
+  zbi_adj_interaction_country_model,
+  "lm_adj_zbi_merged_s3_country_main",
+  "lm_adj_zbi_merged_s3_country"
+)
+zbi_lrt_country
+```
+
+```{r}
+cinm_lrt_interaction <- bind_rows(
+  cinm_lrt_adseverity,
+  cinm_lrt_workyn,
+  cinm_lrt_country
+)
+
+output_file <- paste0(outdir, "/tpm_adj_cinm_interaction_lrt.csv")
+write.csv(cinm_lrt_interaction, file = output_file, row.names = FALSE)
+cinm_lrt_interaction
+
+zbi_lrt_interaction <- bind_rows(
+  zbi_lrt_adseverity,
+  zbi_lrt_workyn,
+  zbi_lrt_country
+)
+
+output_file <- paste0(outdir, "/lm_adj_zbi_interaction_lrt.csv")
+write.csv(zbi_lrt_interaction, file = output_file, row.names = FALSE)
+zbi_lrt_interaction
+```
+
+```{r}
+merged_analysis <- df
+merged_analysis$CG_SEX1 <- factor(merged_analysis$CG_SEX1)
+merged_analysis$ADseverity <- factor(merged_analysis$ADseverity, levels = c("Mild", "Moderate", "Moderately severe/severe"))
+merged_analysis$WORKYN <- factor(merged_analysis$WORKYN, levels = c("N", "Y"))
+merged_analysis$COUNTRY <- relevel(factor(merged_analysis$COUNTRY), ref = "FRANCE")
+```
+# end of Appendix 4: sensitivity analysis -- test interaction 
+
+
+# Table 2 statistics
+```{r}
+# Caregiver Informal Care Costs
+df1 <- df %>%
+  group_by(CG_SEX1) %>%
+  dplyr::summarize(
+    mean_cainm = round(mean(COST_COSTCAINM, na.rm = TRUE), 1),
+    std_cainm = round(sd(COST_COSTCAINM, na.rm = TRUE), 1), 
+    n = n()
+  )
+
+df1$model <- "Primary"
+
+df1
+```
+
+```{r}
+df2 <- df %>%
+  group_by(ADseverity, CG_SEX1) %>%
+  dplyr::summarize(
+    mean_cainm = round(mean(COST_COSTCAINM, na.rm = TRUE), 1),
+    std_cainm = round(sd(COST_COSTCAINM, na.rm = TRUE), 1), 
+    n = n(), .groups = "drop"
+  )
+
+colnames(df2)[colnames(df2) == "ADseverity"] <- "model"
+df2
+```
+
+```{r}
+df2_woUS <- df %>%
+  filter(COUNTRY != "US", ADseverity == "Mild") %>%
+  group_by(ADseverity, CG_SEX1) %>%
+  dplyr::summarize(
+    mean_cainm = round(mean(COST_COSTCAINM, na.rm = TRUE), 1),
+    std_cainm = round(sd(COST_COSTCAINM, na.rm = TRUE), 1), 
+    n = n(), .groups = "drop"
+  )
+
+colnames(df2_woUS)[colnames(df2_woUS) == "ADseverity"] <- "model"
+df2_woUS$model <- paste0(df2_woUS$model, "_woUS")
+df2_woUS
+```
+
+```{r}
+df3 <- df %>%
+  group_by(WORKYN, CG_SEX1) %>%
+  dplyr::summarize(
+    mean_cainm = round(mean(COST_COSTCAINM, na.rm = TRUE), 1),
+    std_cainm = round(sd(COST_COSTCAINM, na.rm = TRUE), 1),
+    n = n(), .groups = "drop"
+  )
+
+colnames(df3)[colnames(df3) == "WORKYN"] <- "model"
+df3$model <- paste0("WORK_", df3$model)
+df3
+```
+
+
+```{r}
+df4 <- df %>%
+  group_by(COUNTRY, CG_SEX1) %>%
+  dplyr::summarize(
+    mean_cainm = round(mean(COST_COSTCAINM, na.rm = TRUE), 1),
+    std_cainm = round(sd(COST_COSTCAINM, na.rm = TRUE), 1), 
+    n = n(),
+    .groups = "drop"
+  )
+
+colnames(df4)[colnames(df4) == "COUNTRY"] <- "model"
+df4
+```
+
+```{r}
+df_statistics <- bind_rows(df1, df2, df2_woUS, df3, df4)
+
+output_file <- paste0(outdir_orig, "Table2_cinm_stat.csv") 
+# Save the data frame to a CSV file
+write.csv(df_statistics, file = output_file, row.names = FALSE)
+```
+
+# Table 3 statistics
+```{r}
+# ZBI
+df1 <- df %>%
+  group_by(CG_SEX1) %>%
+  dplyr::summarize(
+    mean_ZBITOTB = round(mean(ZBITOTB, na.rm = TRUE), 1),
+    std_ZBITOTB = round(sd(ZBITOTB, na.rm = TRUE), 1),
+    n = n()
+  )
+
+df1$model <- "Primary"
+
+df1
+```
+
+```{r}
+df2 <- df %>%
+  group_by(ADseverity, CG_SEX1) %>%
+  dplyr::summarize(
+    mean_ZBITOTB = round(mean(ZBITOTB, na.rm = TRUE), 1),
+    std_ZBITOTB = round(sd(ZBITOTB, na.rm = TRUE), 1),
+    n = n(), .groups = "drop"
+  )
+
+colnames(df2)[colnames(df2) == "ADseverity"] <- "model"
+df2
+```
+
+```{r}
+df2_woUS <- df %>%
+  filter(COUNTRY != "US", ADseverity == "Mild") %>%
+  group_by(ADseverity, CG_SEX1) %>%
+  dplyr::summarize(
+    mean_ZBITOTB = round(mean(ZBITOTB, na.rm = TRUE), 1),
+    std_ZBITOTB = round(sd(ZBITOTB, na.rm = TRUE), 1),
+    n = n(), .groups = "drop"
+  )
+
+colnames(df2_woUS)[colnames(df2_woUS) == "ADseverity"] <- "model"
+df2_woUS$model <- paste0(df2_woUS$model, "_woUS")
+df2_woUS
+```
+
+
+```{r}
+df3 <- df %>%
+  group_by(WORKYN, CG_SEX1) %>%
+  dplyr::summarize(
+    mean_ZBITOTB = round(mean(ZBITOTB, na.rm = TRUE), 1),
+    std_ZBITOTB = round(sd(ZBITOTB, na.rm = TRUE), 1),
+    n = n(), .groups = "drop"
+  )
+
+colnames(df3)[colnames(df3) == "WORKYN"] <- "model"
+df3$model <- paste0("WORK_", df3$model)
+df3
+```
+
+
+```{r}
+df4 <- df %>%
+  group_by(COUNTRY, CG_SEX1) %>%
+  dplyr::summarize(
+    mean_ZBITOTB = round(mean(ZBITOTB, na.rm = TRUE), 1),
+    std_ZBITOTB = round(sd(ZBITOTB, na.rm = TRUE), 1),
+    n = n(), .groups = "drop"
+  )
+
+colnames(df4)[colnames(df4) == "COUNTRY"] <- "model"
+df4
+```
+
+```{r}
+df_statistics <- bind_rows(df1, df2, df2_woUS, df3, df4)
+
+output_file <- paste0(outdir_orig, "Table3_zbi_stat.csv") 
+# Save the data frame to a CSV file
+write.csv(df_statistics, file = output_file, row.names = FALSE)
+```
+
+
+# Figure 2
+load the merged dataset
+```{r}
+load(paste0(datadir,"merged_core_SE.RData"))
+```
+
+
+```{r}
+table(df_all$COUNTRY)
+```
+
+
+```{r}
+df_long <- df_all
+
+df_long$COUNTRY <- ifelse(df_long$COUNTRY == "Japan", "JAPAN",
+                            #ifelse(data_long2$COUNTRY == "UNITED KINGDOM", "UK", as.character(data_long2$COUNTRY)
+                            ifelse(df_long$COUNTRY == "US", "UNITED STATES", as.character(df_long$COUNTRY)
+                            )
+)
+
+table(df_long$COUNTRY)
+df_long$COUNTRY <- factor(
+  df_long$COUNTRY,
+  levels = c("FRANCE", "GERMANY", "UNITED KINGDOM", "ITALY", "SPAIN", "JAPAN", "UNITED STATES")
+)
+
+levels(df_long$COUNTRY) <- stringr::str_to_title(c("FRANCE", "GERMANY", "UNITED KINGDOM", "ITALY", "SPAIN", "JAPAN", "UNITED STATES"))
+table(df_long$COUNTRY)
+```
+
+
+```{r}
+outcomevar <- "COST_COSTCAINM"
+
+data_long2 <- df_long |>
+  select(COUNTRY, outcomevar, CG_SEX1) |>
+  group_by(COUNTRY, CG_SEX1) |>
+  dplyr::summarize(
+    Cost = round(mean(COST_COSTCAINM, na.rm = TRUE), 1),
+    n= n(), .groups = "drop"
+  )
+
+data_long2$Gender <- case_when(
+  as.character(data_long2$CG_SEX1) == "1" ~ "Male",
+  as.character(data_long2$CG_SEX1) == "2" ~ "Female",
+  TRUE ~ NA_character_
+)
+
+data_long2
+
+```
+
+
+## Fig 2A
+```{r}
+# Plot
+fig2A <- ggplot(data_long2, aes(x = COUNTRY, y = Cost, fill = Gender)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.9)) +
+  geom_text(aes(label = ifelse(!is.na(Cost), format(Cost, nsmall = 1), "")), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.3, size = 3) +
+  scale_fill_manual(values = c("Male" = "#0072B2", "Female" = "#E69F00")) +
+  labs(x = "", y = "Informal Care Costs (USD)", fill = NULL) +
+  theme_minimal(base_size = 13) +
+
+  theme(
+    axis.text.x = element_text(size = 8, color = "black"),  # Adjust size as needed, face = "bold"
+    legend.position = "bottom",
+    axis.text.y = element_text(color = "black"),                 # ← optional (for consistency)
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank()
+  )
+
+fig2A
+
+# Save it
+ggsave(paste0(outdir_orig, "Fig2A_informal_care_costs.png"), plot = fig2A, width = 7, height = 5, dpi = 300)
+```
+
+```{r}
+outcomevar <- "ZBITOTB"
+
+data_long3 <- df_long |>
+  select(COUNTRY, outcomevar, CG_SEX1) |>
+  group_by(COUNTRY, CG_SEX1) |>
+  dplyr::summarize(
+    Cost = round(mean(ZBITOTB, na.rm = TRUE), 1),
+    n = n(), .groups = "drop"
+  )
+
+data_long3$Gender <- case_when(
+  as.character(data_long3$CG_SEX1) == "1" ~ "Male",
+  as.character(data_long3$CG_SEX1) == "2" ~ "Female",
+  TRUE ~ NA_character_
+)
+
+data_long3
+
+```
+
+## Fig 2B
+```{r}
+# Plot
+fig2B <- ggplot(data_long3, aes(x = COUNTRY, y = Cost, fill = Gender)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.85)) +
+  geom_text(aes(label = ifelse(!is.na(Cost), format(Cost, nsmall = 1), "")), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.3, size = 3) +
+  scale_fill_manual(values = c("Male" = "#0072B2", "Female" = "#E69F00")) +
+  labs(x = "", y = "ZBI Total Score", fill = NULL) +
+  theme_minimal(base_size = 13) +
+
+  theme(
+    axis.text.x = element_text(size = 8, color = "black"),  # Adjust size as needed
+    legend.position = "bottom",
+    axis.text.y = element_text(color = "black"),                 # ← optional (for consistency)
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank()
+  )
+
+fig2B
+
+# Save it
+ggsave(paste0(outdir_orig, "Fig2B_ZBI.png"), plot = fig2B, width = 7, height = 5, dpi = 300)
+
+```
+
+## Fig 2
+```{r}
+# Install if needed
+# install.packages("patchwork")
+library(patchwork)
+
+# Combine side-by-side with labels A and B
+combined <- fig2A + fig2B + plot_annotation(tag_levels = "A")
+
+# Show combined plot
+combined
+```
+
+
+```{r}
+# Save high-resolution PNG
+ggsave(paste0(outdir_orig, "Fig2.png"), plot = combined, width = 14, height = 5, dpi = 300)
+
+```
+
+
+# Appendix 3: patient and caregiver statistics across countries
+
+## FigA3-1
+```{r}
+# Step 1: Calculate percentages
+df_percent <- df_long %>%
+  group_by(COUNTRY, CG_SEX1) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  group_by(COUNTRY) %>%
+  mutate(percent = count / sum(count) * 100)
+
+# Step 2: Plot
+FigA3.1 <- ggplot(df_percent, aes(x = COUNTRY, y = percent, fill = CG_SEX1)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_text(aes(label = paste0(round(percent, 1), "%")),
+            position = position_dodge(width = 0.9),
+            vjust = -0.5, size = 3) +
+  labs(
+    title = "", #"Percentage of Female and Male Caregivers per Country",
+    x = NULL,
+    y = "Percentage of Caregivers",
+    fill = ""
+  ) +
+  
+  theme_minimal(base_size = 13) +
+
+  theme(
+    axis.text.x = element_text(size = 8, color = "black"),  # Adjust size as needed
+    legend.position = "bottom",
+    axis.text.y = element_text(color = "black"),                 # ← optional (for consistency)
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor.x = element_blank()
+  )
+
+FigA3.1 
+
+# Save it
+ggsave(paste0(outdir_orig, "FigA3-1.png"), plot = FigA3.1, width = 7, height = 5, dpi = 300)
+
+```
+
+
+## FigA3-2
+```{r}
+levels(df_long$CG_SEX1) <- c("Male", "Female")
+
+levels(df_long$WORKYN) <- c("No", "Yes")
+
+levels(df_long$P_EDUC1) <- c("12 years or less", "> 12 years")
+
+levels(df_long$CG_LIVEIN1) <- c("Yes", "No")
+
+levels(df_long$CG_REL1) <- c("Spouse", "Child", "Other")
+```
+
+## box plot
+```{r}
+FigA3_age <- ggplot(df_long, aes(x = COUNTRY, y = P_AGE1, fill = CG_SEX1)) +
+  geom_boxplot() +
+  labs(title = "Patient age", x = NULL, y = "Patient age", fill = NULL) +
+  theme(
+    axis.text.x = element_text(size = 8, color = "black")
+  )
+
+FigA3_age
+```
+
+```{r}
+FigA3_mmse <- ggplot(df_long, aes(x = COUNTRY, y = MMSETOTB, fill = CG_SEX1)) +
+  geom_boxplot() +
+  labs(title = "MMSE total score", x = NULL, y = "MMSE total score", fill = NULL) +
+  theme(
+    axis.text.x = element_text(size = 8, color = "black")
+  )
+FigA3_mmse
+```
+```{r}
+FigA3_cmbdt <- ggplot(df_long, aes(x = COUNTRY, y = cmbdts, fill = CG_SEX1)) +
+  geom_boxplot() +
+  labs(title = "Patient comorbidity", x = NULL, y = "Number of comorbidities", fill = NULL) +
+  theme(
+    axis.text.x = element_text(size = 8, color = "black")
+  )
+
+FigA3_cmbdt
+```
+
+```{r}
+FigA3_cgage <- ggplot(df_long, aes(x = COUNTRY, y = CG_AGE2, fill = CG_SEX1)) +
+  geom_boxplot() +
+  labs(title = "Caregiver age", x = NULL, y = "Caregiver age", fill = NULL) +
+  theme(
+    axis.text.x = element_text(size = 8, color = "black")
+  )
+
+FigA3_cgage
+```
+
+
+```{r}
+FigA3_cgwork <- ggplot(df_long, aes(x = WORKYN, fill = CG_SEX1)) +
+  geom_bar(position = "dodge") +
+  facet_wrap(~ COUNTRY) +
+  labs(title = "Caregiver employment status", x = "Having paid work", y = "Number of caregivers", fill = NULL) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+FigA3_cgwork
+```
+
+
+```{r}
+FigA3_educ <- ggplot(df_long, aes(x = P_EDUC1, fill = CG_SEX1)) +
+  geom_bar(position = "dodge") +
+  facet_wrap(~ COUNTRY) +
+  labs(title = "Patient education", x = "Education years", y = "Number of patients", fill = NULL) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+FigA3_educ
+```
+
+```{r}
+FigA3_cglive <- ggplot(df_long, aes(x = CG_LIVEIN1, fill = CG_SEX1)) +
+  geom_bar(position = "dodge") +
+  facet_wrap(~ COUNTRY) +
+  labs(title = "Caregiver living status", x = "Live with patients", y = "Number of caregivers", fill = NULL) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+FigA3_cglive
+```
+
+
+```{r}
+FigA3_cgrel <- ggplot(df_long, aes(x = CG_REL1, fill = CG_SEX1)) +
+  geom_bar(position = "dodge") +
+  facet_wrap(~ COUNTRY) +
+  labs(title = "Caregiver–patient relationship", x = "Relationship with the patient", y = "Number of caregivers", fill = NULL) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+FigA3_cgrel
+```
+
+# combine plots into FigA3
+```{r}
+library(ggplot2)
+library(patchwork)
+
+# Define plots as above
+#plots <- list(FigA3_age, FigA3_cgage, FigA3_mmse, FigA3_cmbdt, FigA3_educ, FigA3_cgwork)
+
+# Combine using patchwork layout
+#FigA3 <- wrap_plots(plots, ncol = 2, nrow = 3)
+
+
+# Combine plots row-wise
+combined <- (FigA3_age + FigA3_cgage) /
+  plot_spacer() / 
+  (FigA3_mmse + FigA3_cmbdt) / 
+  plot_spacer() / 
+  (FigA3_educ + FigA3_cgwork) / 
+  plot_spacer() / 
+  (FigA3_cglive + FigA3_cgrel)
+
+#(p1 + p2) / (p3 + p4) / (p5 + p6) / p7
+
+# Set relative row heights
+FigA3.2 <- combined + plot_annotation(tag_levels = "A") + plot_layout(heights = c(1, 0.05, 1, 0.05, 1.5, 0.05, 1.5))
+```
+
+```{r}
+# Save high-resolution PNG
+ggsave(paste0(outdir_orig, "FigA3-2.png"), plot = FigA3.2, width = 14, height = 18, dpi = 300)
+
+```
+
+
+# informal care cost
+
+```{r}
+df_long <- df_long %>%
+  mutate(ADseverity = case_when(
+    MMSETOTB >= 21 & MMSETOTB <= 26 ~ "Mild",
+    MMSETOTB >= 15 & MMSETOTB <= 20 ~ "Moderate",
+    MMSETOTB < 15 ~ "Moderately severe/severe",
+    TRUE ~ NA_character_  # handles missing or out-of-range values
+  ))
+
+table(df_long$ADseverity, df_long$COUNTRY, useNA = "ifany")
+
+df_long$ADseverity <- ifelse(df_long$COUNTRY == "United States", "Mild", df_long$ADseverity)
+table(df_long$ADseverity, df_long$COUNTRY, useNA = "ifany")
+```
+
+
+
+```{r}
+df_long %>%
+  filter(COUNTRY != "United States") %>%
+  group_by(ADseverity, CG_SEX1) %>%
+  dplyr::summarize(
+    mean_cainm = round(mean(COST_COSTCAINM, na.rm = TRUE), 1),
+    std_cainm = round(sd(COST_COSTCAINM, na.rm = TRUE), 1), 
+    n = n(),
+    .groups = "drop"
+  )
+
+
+```
+
+
+# Appendix 1: distribution of informal care costs
+```{r}
+figA1_data <- merged_analysis
+figA1_data$COST_COSTCAINM_bi <- as.factor(ifelse(figA1_data$COST_COSTCAINM == 0, "no cost", "cost > 0"))
+
+table(figA1_data$COST_COSTCAINM_bi)
+```
+
+```{r}
+file_name <- paste0(outdir_orig, "FigA1-1_hist_InfCareCosts", ".png")
+  
+png(file_name, width = 1200, height = 900, res = 150)
+  
+# distribution of Informal Care Costs, Fig A1-1
+hist(figA1_data$COST_COSTCAINM, 
+     main = "Histogram of Informal care costs",
+     xlab = "Caregiver Informal Care Costs",
+     ylab = "Frequency",
+     col = "skyblue",
+     border = "black",
+     breaks = 50  
+)
+
+dev.off()
+```
+
+```{r}
+severity_levels <- c("Mild", "Moderate", "Moderately severe/severe")
+severity_titles <- c("Mild", "Moderate", "Severe")
+
+severity_plot_list <- list()
+
+for (i in seq_along(severity_levels)) {
+  severity <- severity_levels[i]
+  subset_df <- subset(figA1_data, ADseverity == severity)
+
+  p <- ggplot(subset_df, aes(x = COST_COSTCAINM)) +
+    geom_histogram(bins = 50, fill = "skyblue", color = "black") +
+    labs(
+      title = severity_titles[i],
+      x = "Caregiver Informal Care Costs",
+      y = "Frequency"
+    ) +
+    theme_bw()
+
+  severity_plot_list[[severity_titles[i]]] <- p
+}
+```
+
+```{r}
+library(patchwork)
+
+FigA1_2_hist <- wrap_plots(severity_plot_list, ncol = 2, nrow = 2)
+
+file_name <- paste0(outdir_orig, "FigA1-2_hist_by_ADseverity", ".png")
+
+ggsave(file_name,
+       FigA1_2_hist,
+       width = 12, height = 8, dpi = 300)
+```
+
+```{r}
+work_levels <- c("Y", "N")
+work_titles <- c("Having paid work", "No paid work")
+
+work_plot_list <- list()
+
+for (i in seq_along(work_levels)) {
+  work_status <- work_levels[i]
+  subset_df <- subset(figA1_data, WORKYN == work_status)
+
+  p <- ggplot(subset_df, aes(x = COST_COSTCAINM)) +
+    geom_histogram(bins = 50, fill = "skyblue", color = "black") +
+    labs(
+      title = work_titles[i],
+      x = "Caregiver Informal Care Costs",
+      y = "Frequency"
+    ) +
+    theme_bw()
+
+  work_plot_list[[work_titles[i]]] <- p
+}
+```
+
+```{r}
+library(patchwork)
+
+FigA1_3_hist <- wrap_plots(work_plot_list, ncol = 2, nrow = 2)
+
+file_name <- paste0(outdir_orig, "FigA1-3_hist_by_WORKYN", ".png")
+
+ggsave(file_name,
+       FigA1_3_hist,
+       width = 12, height = 8, dpi = 300)
+```
+
+```{r}
+library(stringr)
+
+countries <- c("FRANCE", "GERMANY", "ITALY", "UNITED KINGDOM", "SPAIN", "Japan", "US")
+
+plot_list <- list()
+
+for (ct in countries) {
+  subset_df <- subset(figA1_data, COUNTRY == ct)
+
+  ct_name <- ct
+  if (ct == "US"){
+    ct_name = "United States"
+  }
+  ct_name <- str_to_title(ct_name)
+
+    
+  p <- ggplot(subset_df, aes(x = COST_COSTCAINM)) +
+    geom_histogram(bins = 50, fill = "skyblue", color = "black") +
+    labs(
+      title = ct_name,
+      x = "Caregiver Informal Care Costs",
+      y = "Frequency"
+    ) +
+    theme_bw()
+
+  plot_list[[ct]] <- p
+}
+```
+
+```{r}
+library(patchwork)
+
+FigA1_4_hist <- wrap_plots(plot_list, ncol = 2, nrow = 4)
+
+file_name <- paste0(outdir_orig, "FigA1-4_hist_by_country", ".png")
+
+ggsave(file_name,
+       FigA1_4_hist,
+       width = 12, height = 12, dpi = 300)
+```
