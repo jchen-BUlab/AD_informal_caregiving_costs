@@ -1,6 +1,6 @@
 Code developed for the gender differences in AD costs project and the 2026 paper accepted by BMC Public Health.
 
-Jain SS, Ang TFA, Sunderaraman P, Au R, Chen J. Gender Differences in Informal Caregiving Costs and Burden in Alzheimer Disease: A Multinational Cross-sectional Analysis. Accepted by BMC Public Health.
+Jain SS, Ang TFA, Sunderaraman P, Au R, Chen J. Gender Differences in Informal Caregiving Costs and Burden in Alzheimer Disease: A Multinational Cross-sectional Analysis. BMC Public Health 26, 1938 (2026). https://doi.org/10.1186/s12889-026-27524-9.
 
 copyright (c) 2026 Jinying Chen, Boston University Chobanian & Avedisian School of Medicine
 
