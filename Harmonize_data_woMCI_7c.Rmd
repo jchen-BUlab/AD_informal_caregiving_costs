@@ -93,6 +93,26 @@ knitr::opts_chunk$set(echo = TRUE)
        value |        314    1.142116    .0443042     1.0667     1.2298
 
 
+# dollar conversion
+```{r}
+# index year 2020
+IF_rate <- c(
+# inflation factor for USA:
+1.0596063,
+# inflation factor for JPN:
+1.0144817,
+# inflation factor for ESP:
+1.0303351,
+# inflation factor for ITA:
+1.0293441,
+# inflation factor for FRA:
+1.0894063,
+# inflation factor for DEU:
+1.1132973,
+# inflation factor for GBR:
+1.1747145
+)
+
 names(IF_rate) <- c("US", "JP", "SP", "IT", "FR", "DE", "UK")
 
 US_rate <- c(1, 1, 1.14, 1.14, 1.14, 1.14, 1.14)
