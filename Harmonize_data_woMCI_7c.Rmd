@@ -19,7 +19,6 @@ date: "2025-10-28"
 # 
 
 ```{r}
-#library(Hmisc)
 library(psych)
 library(dplyr)
 library(table1) #Produced table 1 ready for publication
